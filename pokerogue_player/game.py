@@ -30,6 +30,7 @@ class Game:
     async def start(self) -> None:
         from playwright.async_api import async_playwright
 
+        log.info("launching Chromium (profile: %s)", self.config.profile_dir)
         self._pw = await async_playwright().start()
         self._ctx = await self._pw.chromium.launch_persistent_context(
             user_data_dir=str(self.config.profile_dir),
@@ -41,7 +42,15 @@ class Game:
         host = re.escape(urlparse(self.config.url).netloc)
         await self.page.route(re.compile(rf"^https?://{host}/.*\.js(\?.*)?$"), self._patch_bundle)
         self.page.on("pageerror", lambda e: log.debug("page error: %s", e))
-        await self.page.goto(self.config.url, wait_until="domcontentloaded")
+        self.page.on("console", self._on_console)
+        log.info("opening %s", self.config.url)
+        await self.page.goto(self.config.url, wait_until="domcontentloaded", timeout=90_000)
+        log.info("page loaded; game is starting")
+
+    @staticmethod
+    def _on_console(msg) -> None:
+        if msg.type == "error":
+            log.debug("console error: %s", msg.text)
 
     async def _patch_bundle(self, route) -> None:
         try:
@@ -53,8 +62,7 @@ class Game:
             patched, n = _INIT_SCENE_RE.subn(
                 lambda m: f"function initGlobalScene({m.group(1)}){{window.__prScene={m.group(1)};", body
             )
-            if n:
-                log.debug("patched initGlobalScene in %s", route.request.url)
+            log.info("found game bundle %s (initGlobalScene patched: %s)", route.request.url.rsplit("/", 1)[-1], bool(n))
             await route.fulfill(response=response, body=patched)
         except Exception:  # never block the game from loading
             log.exception("bundle patch failed; continuing unpatched")

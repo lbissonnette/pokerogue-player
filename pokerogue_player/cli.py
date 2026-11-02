@@ -57,20 +57,35 @@ def build_config(args: argparse.Namespace) -> Config:
 
 
 async def _inspect(cfg: Config) -> None:
+    import time
+
     from .game import Game
 
+    log = logging.getLogger("pokerogue_player.inspect")
     game = Game(cfg)
     await game.start()
     try:
-        print("Waiting for the game to load. Press Ctrl+C to quit.")
+        log.info("Waiting for the bridge to find the game (Ctrl+C to quit)...")
+        start = last_print = time.monotonic()
+        last_status = None
+        while True:
+            status = await game.status()
+            if status.get("sceneFound"):
+                log.info("bridge attached: %s", status)
+                break
+            now = time.monotonic()
+            if status != last_status or now - last_print > 15:
+                log.info("still waiting (%.0fs): %s", now - start, status)
+                last_status, last_print = status, now
+            await asyncio.sleep(1)
         last = None
         while True:
             d = await game.decision()
             summary = (d.get("kind"), d.get("phase"), d.get("handler"))
             if summary != last:
                 last = summary
-                print(json.dumps(d, indent=2)[:6000])
-                print("-" * 60)
+                print(json.dumps(d, indent=2)[:6000], flush=True)
+                print("-" * 60, flush=True)
             await asyncio.sleep(1)
     finally:
         await game.stop()
