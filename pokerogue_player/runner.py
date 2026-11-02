@@ -51,6 +51,8 @@ class Runner:
         self._last_signature = None
         self._started_run = False
         self._title_seen = 0
+        self._repeat_sig = None
+        self._repeat_counts: dict[str, int] = {}
         self._login_warned = False
 
     def close(self) -> None:
@@ -112,8 +114,29 @@ class Runner:
             log.debug("no safe options for %s", kind)
             return
 
+        # Loop protection: if we keep making the same choice on what is the same decision
+        # (same screen, wave, turn and options), it isn't working; stop offering it.
+        state = d.get("state") or {}
+        battle = state.get("battle") or {}
+        sig = (kind, d.get("phase"), state.get("wave"), battle.get("turn"),
+               tuple(o["id"] for o in options), d.get("acting"))
+        if sig != self._repeat_sig:
+            self._repeat_sig, self._repeat_counts = sig, {}
+        blocked = {oid for oid, n in self._repeat_counts.items() if n >= 2}
+        if blocked:
+            remaining = [o for o in options if o["id"] not in blocked]
+            if not remaining:
+                log.warning("every option in %s has failed repeatedly; backing out", kind)
+                await self.game.cancel()
+                self._repeat_counts = {}
+                return
+            log.warning("options %s keep failing in %s; excluding them", sorted(blocked), kind)
+            options = remaining
+            d["options"] = options
+
         t0 = time.monotonic()
         choice = await self.policy.choose(d)
+        self._repeat_counts[choice.option_id] = self._repeat_counts.get(choice.option_id, 0) + 1
         latency = time.monotonic() - t0
         result = await self._act(d, choice.option_id)
         self.decisions += 1

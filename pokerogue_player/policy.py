@@ -80,6 +80,10 @@ class RulePolicy:
                 best, best_score = o, score
         if best:
             return Choice(best["id"], f"highest expected damage (score {best_score:.0f})")
+        # No move listed: never switch "by default". Prefer anything that isn't a switch.
+        other = next((o for o in options if not o["id"].startswith("switch:")), None)
+        if other:
+            return Choice(other["id"], "no move available; avoiding a pointless switch")
         return None
 
     def _party(self, options, decision, state):

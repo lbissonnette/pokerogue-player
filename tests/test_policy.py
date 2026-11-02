@@ -115,3 +115,9 @@ def test_memory_records_history_and_notes():
 async def test_rule_mystery_defaults_to_last_option():
     d = {"kind": "mystery", "options": [{"id": "me:0", "label": "Fight"}, {"id": "me:2", "label": "Leave"}]}
     assert (await RulePolicy().choose(d)).option_id == "me:2"
+
+
+async def test_rule_command_without_moves_does_not_default_to_switch():
+    d = {"kind": "command", "acting": "A", "state": {}, "options": [
+        {"id": "switch:1", "label": "Switch"}, {"id": "ball:0", "label": "Ball"}, {"id": "run", "label": "Run"}]}
+    assert (await RulePolicy().choose(d)).option_id == "ball:0"

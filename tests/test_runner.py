@@ -28,6 +28,9 @@ class FakeGame:
         self.starters = ids
         return {"ok": True}
 
+    async def cancel(self):
+        self.acts.append(("cancel",))
+
     async def screenshot(self, path):
         pass
 
@@ -146,3 +149,16 @@ async def test_dangerous_options_never_reach_the_policy(tmp_path):
     runner, game = make_runner(tmp_path, [d])
     await runner.step()
     assert game.acts == [(1, "opt:2")]
+
+
+async def test_repeated_failing_choice_is_excluded_then_backs_out(tmp_path):
+    def d(seq):
+        return {"kind": "party", "seq": seq, "phase": "SwitchPhase", "state": {"wave": 1, "battle": {"turn": 3},
+                "party": [{"slot": 1, "hp": 5, "max_hp": 10}, {"slot": 2, "hp": 9, "max_hp": 10}]},
+                "options": [{"id": "slot:1", "label": "a"}, {"id": "slot:2", "label": "b"}]}
+    runner, game = make_runner(tmp_path, [d(i) for i in range(1, 7)])
+    for _ in range(6):
+        await runner.step()
+    # healthiest (slot:2) twice, then slot:1 twice, then everything failed -> cancel
+    assert game.acts[:4] == [(1, "slot:2"), (2, "slot:2"), (3, "slot:1"), (4, "slot:1")]
+    assert game.acts[4] == ("cancel",)

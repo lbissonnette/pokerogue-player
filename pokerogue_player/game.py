@@ -88,6 +88,9 @@ class Game:
     async def act(self, seq: int, option_id: str) -> dict:
         return await self._call("([s, id]) => window.__prBot.act(s, id)", [seq, option_id])
 
+    async def cancel(self) -> None:
+        await self._call("() => window.__prBot.cancel()")
+
     async def choose_starters(self, species_ids: list[int]) -> dict:
         return await self._call("(ids) => window.__prBot.chooseStarters(ids)", species_ids)
 
