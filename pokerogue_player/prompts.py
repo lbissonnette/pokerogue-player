@@ -21,6 +21,9 @@ Weaken them first if it's safe, and don't waste good balls on weak catches.
 team (EXP items, stat boosters, good held items), then everything else. Save money for revives \
 and potions before boss waves (every 10 waves) when the shop is available.
 - Only replace moves with clearly better ones (coverage, power, STAB).
+- Mystery encounters: read the description and each option's effect. Weigh the reward against \
+the cost (HP, money, items, or losing a Pokemon) given the team's current state. Leaving is \
+fine when every option is risky.
 
 Reply with a JSON object only:
 {"action": "<option id>", "reason": "<one short sentence>", "note": "<optional short note to \

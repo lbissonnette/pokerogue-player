@@ -108,6 +108,10 @@ class RulePolicy:
             return Choice(weakest["id"], "new move is stronger than the weakest current move")
         return Choice("keep", "current moves are at least as good")
 
+    def _mystery(self, options, decision, state):
+        # Without judgement, the last option (usually "leave" / decline) is the safest.
+        return Choice(options[-1]["id"], "safest default: last option (usually leave)")
+
     def _modifier(self, options, decision, state):
         reward = next((o for o in options if o["id"].startswith("reward:")), None)
         return Choice(reward["id"], "take the first reward") if reward else None

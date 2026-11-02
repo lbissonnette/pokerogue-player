@@ -110,3 +110,8 @@ def test_memory_records_history_and_notes():
     for i in range(3):
         m.record(COMMAND, Choice("move:1", note=f"n{i}"))
     assert len(m.history) == 2 and "Thunderbolt" in m.history[-1] and list(m.notes)[-1] == "n2"
+
+
+async def test_rule_mystery_defaults_to_last_option():
+    d = {"kind": "mystery", "options": [{"id": "me:0", "label": "Fight"}, {"id": "me:2", "label": "Leave"}]}
+    assert (await RulePolicy().choose(d)).option_id == "me:2"

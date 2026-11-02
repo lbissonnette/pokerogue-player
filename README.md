@@ -89,7 +89,7 @@ moves that have been used. `--reveal-hidden` gives it exact HP, natures and full
 | Starting team (10-point budget, always includes a Pokérus starter when one is affordable) | LLM (best-stats fallback), or `--starters` |
 | Title screen, save slot | Fixed rules: new run in an empty slot, or `--continue` the bot's own run |
 | "Switch before the next trainer Pokémon?" | Turned off via Battle Style "Set" |
-| Mystery encounters | First option (to be improved) |
+| Mystery encounters (description, each option and its effect; disabled options hidden) | LLM (fallback: last option, usually leave) |
 | Text, animations, evolutions | Auto-advance |
 
 ## How it reads the game

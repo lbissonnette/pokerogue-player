@@ -533,7 +533,10 @@
     }
     return {
       kind: "party",
-      prompt: phase === "SwitchPhase" ? "Choose a Pokemon to send out." : "Choose a party member.",
+      prompt:
+        phase === "SwitchPhase"
+          ? "Choose a Pokemon to send out."
+          : `Choose a party member (${phase}). Context: ${BOT.log.slice(-3).join(" / ")}`,
       party_mode: mode,
       options,
     };
@@ -603,6 +606,61 @@
       new_move: newInfo,
       options,
     };
+  }
+
+  const cleanBB = t => cleanText(String(t ?? "").replace(/\[\/?[a-z]+(=[^\]]*)?\]/gi, ""));
+  const textsOf = container =>
+    safe(
+      () =>
+        container
+          .getAll()
+          .filter(o => typeof o?.text === "string")
+          .map(o => cleanBB(o.text))
+          .filter(Boolean),
+      [],
+    );
+
+  /**
+   * Mystery encounter: read the rendered title/description, each option's label and its
+   * tooltip (which describes what the option does), and skip options the game disables.
+   */
+  function mysteryDecision() {
+    const h = handler();
+    if (h.blockInput) {
+      return { kind: "wait" }; // options are still animating in
+    }
+    const encounterOptions = h.encounterOptions ?? [];
+    const labels = textsOf(h.optionsContainer);
+    const description = textsOf(h.descriptionContainer);
+    const prev = safe(() => h.getCursor(), 0);
+    const options = [];
+    encounterOptions.forEach((o, i) => {
+      const meets = !!h.optionsMeetsReqs?.[i];
+      // MysteryEncounterOptionMode.DISABLED_OR_DEFAULT = 1, DISABLED_OR_SPECIAL = 3
+      const disabled = !meets && (o.optionMode === 1 || o.optionMode === 3);
+      let tip = "";
+      try {
+        h.setCursor(i);
+        h.displayOptionTooltip();
+        tip = textsOf(h.tooltipContainer).join(" ");
+      } catch (_) {
+        /* tooltip is best-effort */
+      }
+      if (disabled) {
+        return;
+      }
+      const label = labels[i] ?? `Option ${i + 1}`;
+      options.push(
+        opt(`me:${i}`, tip ? `${label} - ${tip}` : label, { type: "mystery", index: i }, { special: meets && o.optionMode >= 2 }),
+      );
+    });
+    try {
+      h.setCursor(prev);
+      h.displayOptionTooltip();
+    } catch (_) {
+      /* ignore */
+    }
+    return { kind: "mystery", prompt: description.join(" "), options };
   }
 
   function menuDecision(kind) {
@@ -692,8 +750,7 @@
       case "SaveSlotSelectUiHandler":
         return saveSlotDecision();
       case "MysteryEncounterUiHandler":
-        // Slice 1: take the first option. Proper handling comes later.
-        return { kind: "auto", act: { type: "press", button: Button.ACTION } };
+        return mysteryDecision();
       case "MenuUiHandler":
         return { kind: "auto", act: { type: "press", button: Button.CANCEL } };
       default:
@@ -876,6 +933,15 @@
         const h = handler();
         const slot = plan.slot >= 0 ? plan.slot : 4;
         h.moveSelectFunction?.(slot);
+        return;
+      }
+      case "mystery": {
+        const h = handler();
+        h.setCursor(act.index);
+        safe(() => h.displayOptionTooltip());
+        if (!h.processInput(Button.ACTION)) {
+          throw new Error(`mystery encounter option ${act.index} was not accepted`);
+        }
         return;
       }
       case "save_slot": {

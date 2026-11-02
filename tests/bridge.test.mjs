@@ -463,3 +463,48 @@ test("dangerous menu options are never offered or executed", async () => {
   const d = ctx.__prBot.getDecision();
   assert.deepEqual(plain(d.options.map(o => o.label)), ["Keep going"]);
 });
+
+test("mystery encounter: reads labels and tooltips, skips disabled options, selects by index", async () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  const texts = arr => ({ getAll: () => arr.map(t => ({ text: t })) });
+  const tips = ["Battle the trainer for an item.", "Pay 500 money.", "Walk away."];
+  class MysteryEncounterUiHandler {
+    blockInput = false;
+    cursor = 0;
+    encounterOptions = [{ optionMode: 0 }, { optionMode: 1 }, { optionMode: 0 }];
+    optionsMeetsReqs = [true, false, true];
+    optionsContainer = texts(["[color=#f8f8f8]Fight[/color]", "Pay", "Leave", "View Party"]);
+    descriptionContainer = texts(["A Rival Appears", "A trainer blocks the path."]);
+    tooltipContainer = { getAll: () => [{ text: tips[this.cursor] }] };
+    pressed = [];
+    getCursor() {
+      return this.cursor;
+    }
+    setCursor(c) {
+      this.cursor = c;
+    }
+    displayOptionTooltip() {}
+    processInput() {
+      this.pressed.push(this.cursor);
+      return true;
+    }
+  }
+  const h = new MysteryEncounterUiHandler();
+  scene.ui._handler = h;
+  scene._phase = { phaseName: "MysteryEncounterPhase" };
+  h.blockInput = true;
+  assert.equal(ctx.__prBot.getDecision().kind, "wait");
+  h.blockInput = false;
+  const d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "mystery");
+  assert.equal(d.prompt, "A Rival Appears A trainer blocks the path.");
+  assert.deepEqual(plain(d.options.map(o => [o.id, o.label])), [
+    ["me:0", "Fight - Battle the trainer for an item."],
+    ["me:2", "Leave - Walk away."],
+  ]);
+  assert.equal(h.cursor, 0, "cursor restored after reading tooltips");
+  await ctx.__prBot.act(d.seq, "me:2");
+  assert.deepEqual(plain(h.pressed), [2]);
+});
