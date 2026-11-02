@@ -56,6 +56,38 @@ def build_config(args: argparse.Namespace) -> Config:
     return cfg
 
 
+def _move_line(m: dict) -> str:
+    pp = f"PP {m.get('pp')}/{m.get('max_pp')}" if m.get("max_pp") is not None else "PP -"
+    return f"{m.get('name')} ({m.get('type')} {m.get('category')}, pow {m.get('power')}, {pp})"
+
+
+def format_decision(d: dict) -> str:
+    """Readable summary of a decision for `inspect` (the full JSON goes to a file)."""
+    lines = [f"[{d.get('kind')}] phase={d.get('phase')} handler={d.get('handler')}"]
+    if d.get("error"):
+        lines.append(f"  error: {d['error']}")
+    if d.get("prompt"):
+        lines.append(f"  {d['prompt']}")
+    for o in d.get("options") or []:
+        lines.append(f"  {o['id']}: {o['label']}")
+    state = d.get("state") or {}
+    if state:
+        lines.append(f"  wave {state.get('wave')}, biome {state.get('biome')}, money {state.get('money')}")
+    for p in state.get("party") or []:
+        flags = ", fainted" if p.get("fainted") else (", on field" if p.get("on_field") else "")
+        lines.append(
+            f"  party {p.get('slot')}: {p.get('name')} Lv{p.get('level')} {p.get('hp')}/{p.get('max_hp')} HP"
+            f" {p.get('status')}{flags}"
+        )
+        moves = p.get("moves") or []
+        lines.extend(f"      - {_move_line(m)}" for m in moves)
+        if not moves:
+            lines.append("      (no moves read)")
+    for e in state.get("enemies") or []:
+        lines.append(f"  enemy: {e.get('name')} Lv{e.get('level')} {e.get('hp_pct')}% {e.get('status')}")
+    return "\n".join(lines)
+
+
 async def _inspect(cfg: Config) -> None:
     import time
 
@@ -78,15 +110,21 @@ async def _inspect(cfg: Config) -> None:
                 log.info("still waiting (%.0fs): %s", now - start, status)
                 last_status, last_print = status, now
             await asyncio.sleep(1)
+        cfg.log_dir.mkdir(parents=True, exist_ok=True)
+        dump = cfg.log_dir / f"inspect-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
+        log.info("full decisions are written to %s", dump)
         last = None
-        while True:
-            d = await game.decision()
-            summary = (d.get("kind"), d.get("phase"), d.get("handler"))
-            if summary != last:
-                last = summary
-                print(json.dumps(d, indent=2)[:6000], flush=True)
-                print("-" * 60, flush=True)
-            await asyncio.sleep(1)
+        with dump.open("a", encoding="utf-8") as f:
+            while True:
+                d = await game.decision()
+                summary = (d.get("kind"), d.get("phase"), d.get("handler"), d.get("prompt"))
+                if summary != last:
+                    last = summary
+                    f.write(json.dumps(d) + "\n")
+                    f.flush()
+                    print(format_decision(d), flush=True)
+                    print("-" * 60, flush=True)
+                await asyncio.sleep(1)
     finally:
         await game.stop()
 

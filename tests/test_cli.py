@@ -22,3 +22,18 @@ def test_build_config_flags():
     assert cfg.model == "x/y" and cfg.model_for("modifier") == "big/model" and cfg.model_for("command") == "x/y"
     assert cfg.reveal_hidden and cfg.title_choice == "continue" and cfg.starters == [25, 1] and not cfg.use_llm
     assert cfg.max_decisions == 5
+
+
+def test_format_decision_shows_every_party_move():
+    from pokerogue_player.cli import format_decision
+
+    move = {"name": "Ember", "type": "FIRE", "category": "SPECIAL", "power": 40, "pp": 20, "max_pp": 25}
+    party = [
+        {"slot": i, "name": f"Mon{i}", "level": 10, "hp": 30, "max_hp": 30, "status": "NONE", "moves": [move] * 4}
+        for i in range(6)
+    ]
+    d = {"kind": "command", "phase": "CommandPhase", "options": [{"id": "move:0", "label": "Use Ember"}],
+         "state": {"wave": 12, "party": party, "enemies": []}}
+    out = format_decision(d)
+    assert out.count("- Ember (FIRE SPECIAL, pow 40, PP 20/25)") == 24
+    assert "move:0: Use Ember" in out
