@@ -513,6 +513,12 @@
       return { kind: "party_option", prompt: `Choose an option for ${p?.name}.`, options };
     }
     const mode = h.partyUiMode;
+    const planned = BOT.pendingTarget;
+    if (planned && !planned.used && phase === "SelectModifierPhase" && party[planned.slot]) {
+      // The reward decision already chose who gets the item. Use it once; if the game
+      // refuses it we come back here with the plan spent and ask normally.
+      return { kind: "auto", act: { type: "party_slot", slot: planned.slot, planned: true } };
+    }
     const options = [];
     party.forEach((p, i) => {
       if (phase === "SwitchPhase" || mode === 1 /* FAINT_SWITCH */) {
@@ -546,20 +552,62 @@
     };
   }
 
+  // Items that make the game ask which Pokemon gets them (SelectModifierPhase checks
+  // `instanceof PokemonModifierType`). Splicers need two picks, so they stay separate.
+  function classChain(o) {
+    const names = [];
+    for (let c = o?.constructor; c && c !== Object && c.name; c = Object.getPrototypeOf(c)) {
+      names.push(c.name);
+    }
+    return names;
+  }
+
+  function isTargetedItem(t) {
+    const chain = classChain(t);
+    return chain.includes("PokemonModifierType") && !chain.includes("FusePokemonModifierType");
+  }
+
+  function hpText(p) {
+    return p.isFainted() ? "fainted" : `${p.hp}/${p.getMaxHp()} HP`;
+  }
+
+  // One option per (item, valid target). Uses the item's own selectFilter, which is what
+  // the party screen checks ("It won't have any effect"), so potions only list hurt
+  // Pokemon, revives only fainted ones, TMs only compatible ones.
+  function itemOptions(prefix, verb, t, coords, extraLabel = "") {
+    const desc = cleanText(safe(() => t.getDescription(), ""));
+    const base = { type: "modifier", ...coords, item: t.name };
+    if (!isTargetedItem(t)) {
+      return [opt(prefix, `${verb} ${t.name}${extraLabel} - ${desc}`, base, { item: t.name })];
+    }
+    const out = [];
+    scene()
+      .getPlayerParty()
+      .forEach((p, i) => {
+        const refusal = typeof t.selectFilter === "function" ? safe(() => t.selectFilter(p), null) : null;
+        if (refusal) {
+          return;
+        }
+        out.push(
+          opt(
+            `${prefix}@slot:${i}`,
+            `${verb} ${t.name}${extraLabel} and use it on ${p.name} (Lv${p.level}, ${hpText(p)}) - ${desc}`,
+            { ...base, target: i },
+            { item: t.name, target: i },
+          ),
+        );
+      });
+    return out;
+  }
+
   function modifierDecision() {
     const s = scene();
     const h = handler();
+    BOT.pendingItem = null;
+    BOT.pendingTarget = null;
     const options = [];
     (h.options ?? []).forEach((o, i) => {
-      const t = o.modifierTypeOption.type;
-      options.push(
-        opt(`reward:${i}`, `Take reward: ${t.name} - ${cleanText(safe(() => t.getDescription(), ""))}`, {
-          type: "modifier",
-          row: 1,
-          col: i,
-          item: t.name,
-        }),
-      );
+      options.push(...itemOptions(`reward:${i}`, "Take reward:", o.modifierTypeOption.type, { row: 1, col: i }));
     });
     const rows = h.shopOptionsRows ?? [];
     rows.forEach((row, r) => {
@@ -568,14 +616,7 @@
         const t = o.modifierTypeOption.type;
         const cost = o.modifierTypeOption.cost;
         if (cost <= s.money) {
-          options.push(
-            opt(`shop:${r}:${c}`, `Buy ${t.name} for ${cost} - ${cleanText(safe(() => t.getDescription(), ""))}`, {
-              type: "modifier",
-              row: rowCursor,
-              col: c,
-              item: t.name,
-            }),
-          );
+          options.push(...itemOptions(`shop:${r}:${c}`, "Buy", t, { row: rowCursor, col: c }, ` for ${cost}`));
         }
       });
     });
@@ -584,7 +625,13 @@
       options.push(opt("reroll", `Reroll rewards for ${reroll}`, { type: "modifier", row: 0, col: 0 }));
     }
     options.push(opt("skip", "Skip taking a reward", { type: "modifier", row: -1, col: -1 }));
-    return { kind: "modifier", prompt: `Choose a reward. Money: ${s.money}.`, options };
+    return {
+      kind: "modifier",
+      prompt:
+        `Choose a reward. Money: ${s.money}. Items used on a Pokemon are listed once per Pokemon ` +
+        "they would have an effect on; picking one also picks the target.",
+      options,
+    };
   }
 
   function learnMoveDecision(phase) {
@@ -886,6 +933,9 @@
         handler().targetSelectCallback([act.target]);
         return;
       case "party_slot":
+        if (BOT.pendingTarget) {
+          BOT.pendingTarget.used = true;
+        }
         await partySelect(act.slot);
         // If exactly one meaningful option appears (e.g. SEND_OUT / APPLY), take it.
         if (handlerName() === "PartyUiHandler" && handler().optionsMode) {
@@ -908,6 +958,7 @@
         return;
       case "modifier": {
         BOT.pendingItem = act.item ?? null;
+        BOT.pendingTarget = act.target === undefined ? null : { slot: act.target, item: act.item };
         const h = handler();
         const cb = h.onActionInput;
         if (!cb) {

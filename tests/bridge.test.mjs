@@ -544,3 +544,71 @@ test("chooseStarters uses the starter screen's moveset, pokerus and passive; ref
   assert.deepEqual(st.map(x => x.passive), [true, false]);
   assert.deepEqual(st.map(x => x.nature), [5, 5]);
 });
+
+test("targeted rewards become one option per valid target, and the plan answers the party screen", async () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  const party = [mon("Rowlet", { hp: 20 }), mon("Litten"), mon("Popplio", { hp: 0 })];
+  scene.getPlayerParty = () => party;
+  class PokemonModifierType {}
+  class PokemonHpRestoreModifierType extends PokemonModifierType {
+    name = "Potion";
+    getDescription = () => "Heals 20 HP";
+    selectFilter = p => (p.isFainted() || p.hp >= p.getMaxHp() ? "It won't have any effect." : null);
+  }
+  class PokemonReviveModifierType extends PokemonModifierType {
+    name = "Revive";
+    getDescription = () => "Revives one Pokemon";
+    selectFilter = p => (p.isFainted() ? null : "It won't have any effect.");
+  }
+  const calls = [];
+  class ModifierSelectUiHandler {
+    awaitingActionInput = true;
+    onActionInput = (row, col) => calls.push([row, col]) || true;
+    options = [
+      { modifierTypeOption: { cost: 0, type: new PokemonHpRestoreModifierType() } },
+      { modifierTypeOption: { cost: 0, type: { name: "Rare Candy", getDescription: () => "Level up" } } },
+    ];
+    shopOptionsRows = [[{ modifierTypeOption: { cost: 400, type: new PokemonReviveModifierType() } }]];
+    rerollCost = -1;
+  }
+  scene.ui._handler = new ModifierSelectUiHandler();
+  scene._phase = { phaseName: "SelectModifierPhase" };
+  let d = ctx.__prBot.getDecision();
+  assert.deepEqual(plain(d.options.map(o => o.id)), ["reward:0@slot:0", "reward:1", "shop:0:0@slot:2", "skip"]);
+  assert.match(d.options[2].label, /Buy Revive for 400 and use it on Popplio \(Lv10, fainted\)/);
+  assert.equal(d.options[2].target, 2);
+
+  await ctx.__prBot.act(d.seq, "shop:0:0@slot:2");
+  assert.deepEqual(calls, [[2, 0]]);
+
+  // The game now opens the party screen: the bot answers it with the planned slot.
+  class PartyUiHandler {
+    partyUiMode = 2;
+    optionsMode = false;
+    options = [];
+    cursor = 0;
+    setCursor(c) {
+      this.cursor = c;
+    }
+    processInput() {
+      this.applied = this.cursor;
+    }
+    allowCancel() {
+      return true;
+    }
+  }
+  const ph = new PartyUiHandler();
+  scene.ui._handler = ph;
+  d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "auto");
+  assert.equal(d.act.slot, 2);
+  await ctx.__prBot.act(d.seq, "__auto__");
+  assert.equal(ph.applied, 2);
+
+  // If the game refused and is still on the party screen, ask normally instead of looping.
+  d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "party");
+  assert.equal(d.item, "Revive");
+});

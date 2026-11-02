@@ -174,3 +174,18 @@ async def test_rule_modifier_prefers_revive_when_someone_fainted():
 async def test_rule_modifier_ignores_revive_when_nobody_fainted():
     d = {"kind": "modifier", "state": _party_state(("A", 50), ("B", 30)), "options": _modifier_options()}
     assert (await RulePolicy().choose(d)).option_id == "reward:0"
+
+
+async def test_rule_modifier_combined_revive_and_potion_targets():
+    state = _party_state(("A", 30), ("B", 80), ("C", 0))
+    opts = [
+        {"id": "reward:0@slot:0", "label": "Take reward: Potion and use it on A", "item": "Potion", "target": 0},
+        {"id": "reward:0@slot:1", "label": "Take reward: Potion and use it on B", "item": "Potion", "target": 1},
+        {"id": "shop:0:0@slot:2", "label": "Buy Revive for 400 and use it on C", "item": "Revive", "target": 2},
+        {"id": "skip", "label": "Skip taking a reward"},
+    ]
+    d = {"kind": "modifier", "state": state, "options": opts}
+    assert (await RulePolicy().choose(d)).option_id == "shop:0:0@slot:2"
+    state = _party_state(("A", 30), ("B", 80), ("C", 50))
+    d = {"kind": "modifier", "state": state, "options": opts[:2] + opts[3:]}
+    assert (await RulePolicy().choose(d)).option_id == "reward:0@slot:0"

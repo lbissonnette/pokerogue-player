@@ -45,9 +45,12 @@ _REVIVE = re.compile(r"revive|sacred ash", re.I)
 _HEAL = re.compile(r"potion|restore|heal|berry juice|full heal|elixir|ether|status", re.I)
 
 
-def _item_name(label: str) -> str:
-    """'Take reward: Revive - desc' / 'Buy Max Revive for 3000 - desc' -> item name."""
-    name = label.split(" - ", 1)[0]
+def _item_name(option: dict) -> str:
+    """The item an option takes or buys ('' for reroll/skip)."""
+    if option.get("item"):
+        return option["item"]
+    name = option.get("label", "").split(" - ", 1)[0]
+    name = re.sub(r" and use it on .*$", "", name)
     name = re.sub(r"^(Take reward: |Buy )", "", name)
     return re.sub(r" for \d+$", "", name)
 
@@ -144,18 +147,39 @@ class RulePolicy:
         return Choice(options[-1]["id"], "safest default: last option (usually leave)")
 
     def _modifier(self, options, decision, state):
-        fainted = [p for p in state.get("party", []) if p.get("fainted")]
+        party = {p["slot"]: p for p in state.get("party", [])}
+
+        def frac(o):
+            p = party.get(o.get("target"))
+            return p["hp"] / max(1, p["max_hp"]) if p else 1.0
+
+        fainted = [p for p in party.values() if p.get("fainted")]
         if fainted:
             # Someone is down: a revive beats anything else on offer. Free reward first, then the shop.
             for prefix in ("reward:", "shop:"):
                 revive = next(
-                    (o for o in options if o["id"].startswith(prefix) and _REVIVE.search(_item_name(o["label"]))),
+                    (
+                        o
+                        for o in options
+                        if o["id"].startswith(prefix)
+                        and _REVIVE.search(_item_name(o))
+                        and (o.get("target") is None or party.get(o["target"], {}).get("fainted", True))
+                    ),
                     None,
                 )
                 if revive:
-                    return Choice(revive["id"], f"revive for fainted {fainted[0].get('name', 'party member')}")
-        reward = next((o for o in options if o["id"].startswith("reward:")), None)
-        return Choice(reward["id"], "take the first reward") if reward else None
+                    who = party.get(revive.get("target"), fainted[0]).get("name", "party member")
+                    return Choice(revive["id"], f"revive for fainted {who}")
+        rewards = [o for o in options if o["id"].startswith("reward:")]
+        if not rewards:
+            return None
+        # Take the first reward; if it goes on a Pokemon, heal the one that needs it most.
+        first = rewards[0]["id"].split("@", 1)[0]
+        same = [o for o in rewards if o["id"].split("@", 1)[0] == first]
+        if len(same) > 1 and _HEAL.search(_item_name(same[0])):
+            pick = min(same, key=frac)
+            return Choice(pick["id"], "take the first reward, on the least healthy Pokemon")
+        return Choice(same[0]["id"], "take the first reward")
 
 
 class LLMPolicy:

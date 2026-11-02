@@ -83,7 +83,7 @@ moves that have been used. `--reveal-hidden` gives it exact HP, natures and full
 | Battle turn: move, switch, Poké Ball, run | LLM (rules fallback) |
 | Target selection in double battles | LLM |
 | Replacement after a faint | LLM |
-| Reward / shop / reroll / skip, and which Pokémon gets an item | LLM |
+| Reward / shop / reroll / skip. Items used on a Pokémon are offered as "item on Pokémon" pairs (only targets the item would affect), so the item and target are one decision | LLM |
 | Learning a move when the moveset is full | LLM |
 | Biome choice and other yes/no or option menus | LLM |
 | Starting team (10-point budget, always includes a Pokérus starter when one is affordable) | LLM (best-stats fallback), or `--starters` |
