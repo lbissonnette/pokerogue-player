@@ -1,0 +1,328 @@
+// Tests bridge.js against a hand-built fake of the PokeRogue objects it touches.
+// Run with: node --test tests/
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import vm from "node:vm";
+
+const BRIDGE = readFileSync(new URL("../pokerogue_player/bridge.js", import.meta.url), "utf8");
+
+// Values from the vm realm have different prototypes; compare plain copies.
+const plain = x => JSON.parse(JSON.stringify(x));
+
+function loadBridge() {
+  const ctx = { setTimeout: (fn, ms) => (ms > 10_000 ? 0 : setTimeout(fn, ms)), performance, console };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(BRIDGE, ctx);
+  return ctx;
+}
+
+class PokemonMove {
+  constructor(moveId, move, ppUsed = 0) {
+    this.moveId = moveId;
+    this.ppUsed = ppUsed;
+    this._move = move ?? MOVES[moveId];
+  }
+  getMove() {
+    return this._move;
+  }
+  getMovePp() {
+    return this._move.pp;
+  }
+  isUsable() {
+    return [this.ppUsed < this._move.pp, ""];
+  }
+  getName() {
+    return this._move.name;
+  }
+}
+const MOVES = {
+  1: { name: "Thunderbolt", type: 12, category: 1, power: 90, accuracy: 100, priority: 0, pp: 15, effect: "May paralyze." },
+  2: { name: "Quick Attack", type: 0, category: 0, power: 40, accuracy: 100, priority: 1, pp: 30, effect: "" },
+  3: { name: "Growl", type: 0, category: 2, power: -1, accuracy: 100, priority: 0, pp: 40, effect: "" },
+  4: { name: "Surf", type: 10, category: 1, power: 90, accuracy: 100, priority: 0, pp: 15, effect: "" },
+  5: { name: "Iron Tail", type: 8, category: 0, power: 100, accuracy: 75, priority: 0, pp: 15, effect: "" },
+};
+
+function mon(name, { hp = 50, maxHp = 50, types = [0], moves = [], onField = false, player = true, id = 1 } = {}) {
+  return {
+    id,
+    name,
+    species: { speciesId: id },
+    level: 10,
+    nature: 3,
+    hp,
+    shiny: false,
+    status: null,
+    getMaxHp: () => maxHp,
+    getHpRatio: () => hp / maxHp,
+    getTypes: () => types,
+    getAbility: () => ({ name: "Static" }),
+    hasPassive: () => false,
+    isFainted: () => hp <= 0,
+    isOnField: () => onField,
+    isActive: () => onField && hp > 0,
+    isAllowedInBattle: () => hp > 0,
+    isTrapped: () => false,
+    isBoss: () => false,
+    getStatStages: () => [1, 0, 0, 0, 0, 0, 0],
+    getHeldItems: () => [],
+    getMoveset: () => moves,
+    getMoveHistory: () => [],
+    getMoveType: m => m.type,
+    // Electric is 2x vs this fake enemy, everything else 1x.
+    getMoveEffectiveness: (_user, m) => (player ? 1 : m.type === 12 ? 2 : 1),
+    isPlayer: () => player,
+  };
+}
+
+class CommandUiHandler {
+  constructor() {
+    this.cursor = 0;
+  }
+  setCursor(c) {
+    this.cursor = c;
+  }
+  processInput() {}
+}
+class CommandPhase {
+  phaseName = "CommandPhase";
+  constructor(user) {
+    this.user = user;
+    this.calls = [];
+  }
+  getFieldIndex() {
+    return 0;
+  }
+  getPokemon() {
+    return this.user;
+  }
+  handleCommand(...args) {
+    this.calls.push(args);
+    return true;
+  }
+}
+
+function makeScene() {
+  const pika = mon("Pikachu", {
+    onField: true,
+    types: [12],
+    moves: [new PokemonMove(1), new PokemonMove(2), new PokemonMove(3, undefined, 40)],
+  });
+  const squirtle = mon("Squirtle", { id: 7, types: [10], moves: [new PokemonMove(4)] });
+  const fainted = mon("Charmander", { id: 4, hp: 0 });
+  const enemy = mon("Gyarados", { id: 130, onField: true, player: false, types: [10, 2], moves: [new PokemonMove(4)] });
+  const phase = new CommandPhase(pika);
+  const handlers = { cmd: new CommandUiHandler() };
+  const scene = {
+    money: 500,
+    pokeballCounts: { 0: 5, 1: 0, 2: 1, 3: 0, 4: 0 },
+    arena: { biomeId: 1, weather: { weatherType: 2 }, terrain: null },
+    gameMode: { getName: () => "Classic" },
+    gameData: { dexData: { 130: { caughtAttr: 0 } } },
+    currentBattle: { waveIndex: 7, battleType: 0, double: false, turn: 2, trainer: null, enemyParty: [enemy] },
+    getPlayerParty: () => [pika, squirtle, fainted],
+    getEnemyParty: () => [enemy],
+    getEnemyField: () => [enemy],
+    getField: () => [pika, null, enemy],
+    phaseManager: { getCurrentPhase: () => scene._phase },
+    _phase: phase,
+    ui: {
+      _handler: handlers.cmd,
+      modes: [],
+      getHandler: () => scene.ui._handler,
+      processInput(b) {
+        return scene.ui._handler.processInput?.(b);
+      },
+      async setMode(m, ...args) {
+        scene.ui.modes.push([m, ...args]);
+      },
+      showText() {},
+    },
+  };
+  return { scene, phase, pika, enemy };
+}
+
+test("captures BattleScene through the sys trap", () => {
+  const ctx = loadBridge();
+  vm.runInContext("class BattleScene { constructor() { this.sys = { ok: 1 }; } }; globalThis.s = new BattleScene();", ctx);
+  assert.equal(ctx.__prBot.status().sceneFound, true);
+  assert.equal(ctx.s.sys.ok, 1);
+  // Trap removed once the scene is found.
+  assert.equal(vm.runInContext("'sys' in {}", ctx), false);
+});
+
+test("command decision lists usable moves, switches, balls and run with state", () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  const d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "command");
+  const ids = plain(d.options.map(o => o.id));
+  // Growl has no PP left, Charmander is fainted, Great Ball count is 0.
+  assert.deepEqual(ids, ["move:0", "move:1", "switch:1", "ball:0", "ball:2", "run"]);
+  const tb = d.options[0].move;
+  assert.equal(tb.type, "ELECTRIC");
+  assert.equal(tb.effectiveness.Gyarados, 2);
+  assert.equal(tb.pp, 15);
+  assert.equal(d.state.wave, 7);
+  assert.equal(d.state.field.weather, "RAIN");
+  assert.equal(d.state.enemies[0].hp_pct, 100);
+  assert.equal(d.state.enemies[0].known_moves.length, 0, "unrevealed enemy moves are hidden");
+  assert.equal(d.state.enemies[0].hp, undefined, "exact enemy HP hidden by default");
+  assert.deepEqual(plain(d.state.party[0].stat_stages), { ATK: 1 });
+});
+
+test("revealHidden exposes enemy movesets and exact HP", () => {
+  const ctx = loadBridge();
+  ctx.__prScene = makeScene().scene;
+  const d = ctx.__prBot.getDecision({ revealHidden: true });
+  assert.equal(d.state.enemies[0].known_moves[0].name, "Surf");
+  assert.equal(d.state.enemies[0].hp, 50);
+});
+
+test("fight action enters the fight menu then issues the command", async () => {
+  const ctx = loadBridge();
+  const { scene, phase } = makeScene();
+  ctx.__prScene = scene;
+  const d = ctx.__prBot.getDecision();
+  const r = await ctx.__prBot.act(d.seq, "move:1");
+  assert.equal(r.ok, true);
+  assert.deepEqual(plain(scene.ui.modes[0]), [3, 0]);
+  assert.deepEqual(phase.calls, [[0, 1]]);
+});
+
+test("stale or unknown actions are rejected", async () => {
+  const ctx = loadBridge();
+  ctx.__prScene = makeScene().scene;
+  const d = ctx.__prBot.getDecision();
+  assert.equal((await ctx.__prBot.act(d.seq + 1, "move:0")).ok, false);
+  const d2 = ctx.__prBot.getDecision();
+  assert.equal((await ctx.__prBot.act(d2.seq, "move:7")).ok, false);
+});
+
+test("modifier decision maps rewards, shop rows and reroll to callback coordinates", async () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  const opt = (name, cost = 0) => ({
+    modifierTypeOption: { cost, type: { name, getDescription: () => `${name} desc` } },
+  });
+  const calls = [];
+  const cb = (row, col) => {
+    calls.push([row, col]);
+    return true;
+  };
+  class ModifierSelectUiHandler {
+    awaitingActionInput = true;
+    onActionInput = cb;
+    options = [opt("Potion"), opt("Rare Candy")];
+    shopOptionsRows = [[opt("Super Potion", 300), opt("Revive", 900)], [opt("Ether", 400)]];
+    rerollCost = 250;
+  }
+  scene.ui._handler = new ModifierSelectUiHandler();
+  scene._phase = { phaseName: "SelectModifierPhase" };
+  let d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "modifier");
+  assert.deepEqual(
+    plain(d.options.map(o => o.id)),
+    ["reward:0", "reward:1", "shop:0:0", "shop:1:0", "reroll", "skip"], // Revive is unaffordable
+  );
+  await ctx.__prBot.act(d.seq, "shop:0:0");
+  // The phase re-opens the menu with a fresh callback after a purchase.
+  Object.assign(scene.ui._handler, { awaitingActionInput: true, onActionInput: cb });
+  d = ctx.__prBot.getDecision();
+  await ctx.__prBot.act(d.seq, "shop:1:0");
+  // The phase re-opens the menu with a fresh callback after a purchase.
+  Object.assign(scene.ui._handler, { awaitingActionInput: true, onActionInput: cb });
+  d = ctx.__prBot.getDecision();
+  await ctx.__prBot.act(d.seq, "reward:1");
+  // Two shop rows: first row is rowCursor 3, second row is rowCursor 2 (matches SelectModifierPhase).
+  assert.deepEqual(calls, [[3, 0], [2, 0], [1, 1]]);
+});
+
+test("faint switch: party decision excludes fainted and on-field, then sends out", async () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  class PartyUiHandler {
+    partyUiMode = 1;
+    optionsMode = false;
+    options = [];
+    cursor = 0;
+    log = [];
+    setCursor(c) {
+      if (this.optionsMode) {
+        this.optionsCursor = c;
+      } else {
+        this.cursor = c;
+      }
+    }
+    processInput(b) {
+      this.log.push(b);
+      if (!this.optionsMode) {
+        this.optionsMode = true;
+        this.options = [0 /* SEND_OUT */, 6 /* SUMMARY */, -1 /* CANCEL */];
+      } else {
+        this.sent = this.options[this.optionsCursor];
+      }
+    }
+    allowCancel() {
+      return false;
+    }
+  }
+  const h = new PartyUiHandler();
+  scene.ui._handler = h;
+  scene._phase = { phaseName: "SwitchPhase" };
+  const d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "party");
+  assert.deepEqual(plain(d.options.map(o => o.id)), ["slot:1"]);
+  await ctx.__prBot.act(d.seq, "slot:1");
+  assert.equal(h.cursor, 1);
+  assert.equal(h.sent, 0, "SEND_OUT chosen automatically as the only real option");
+});
+
+test("learn move: decision at the first confirm, then plan drives summary selection", async () => {
+  const ctx = loadBridge();
+  const { scene, pika } = makeScene();
+  ctx.__prScene = scene;
+  const picked = [];
+  class ConfirmUiHandler {
+    options = [
+      { label: "Yes", handler: () => picked.push("yes") || true },
+      { label: "No", handler: () => picked.push("no") || true },
+    ];
+    clear() {}
+  }
+  const phase = { phaseName: "LearnMovePhase", moveId: 5, getPokemon: () => pika };
+  scene._phase = phase;
+  scene.ui._handler = new ConfirmUiHandler();
+  let d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "learn_move");
+  assert.equal(d.new_move.name, "Iron Tail");
+  assert.deepEqual(plain(d.options.map(o => o.id)), ["forget:0", "forget:1", "forget:2", "keep"]);
+  await ctx.__prBot.act(d.seq, "forget:2");
+  assert.deepEqual(picked, ["yes"]);
+
+  const chosen = [];
+  class SummaryUiHandler {
+    moveSelectFunction = i => chosen.push(i);
+  }
+  scene.ui._handler = new SummaryUiHandler();
+  d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "auto");
+  await ctx.__prBot.act(d.seq, "__auto__");
+  assert.deepEqual(chosen, [2]);
+});
+
+test("unknown screens fall back to pressing Action", () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  class BattleMessageUiHandler {}
+  scene.ui._handler = new BattleMessageUiHandler();
+  scene._phase = { phaseName: "MessagePhase" };
+  const d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "advance");
+});
