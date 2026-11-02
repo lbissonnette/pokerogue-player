@@ -9,6 +9,20 @@ from pathlib import Path
 DEFAULT_URL = "https://pokerogue.net/"
 DEFAULT_MODEL = "anthropic/claude-haiku-4.5"
 
+# Values mirror pokerogue's settings enums (src/system/settings/default-settings.ts).
+BOT_SETTINGS = {
+    "general": {
+        "gameSpeed": 5,  # GameSpeed.TURBO
+        "battleStyle": 1,  # BattleStyle.SET: no "switch Pokemon?" prompt before trainer sends
+        "enableTutorials": False,
+        "expGainsSpeed": 3,  # ExpGainsSpeed.SKIP
+        "hpBarSpeed": 3,  # HpBarSpeed.SKIP
+        "partyExpNotificationMode": 2,  # ExpNotification.SKIP
+        "skipSeenDialogues": True,
+    },
+    "display": {"enableMoveAnimations": False},
+}
+
 
 @dataclass
 class Config:
@@ -31,7 +45,8 @@ class Config:
     # Run setup.
     title_choice: str = "continue"  # "continue" an existing run, or "new" (Classic)
     game_mode_label: str = "Classic"
-    starters: list[int] = field(default_factory=lambda: [4, 7, 1])  # Charmander, Squirtle, Bulbasaur
+    # National dex numbers. None = let the LLM (or, without an LLM, a simple heuristic) pick.
+    starters: list[int] | None = None
     allow_overwrite_save: bool = False
 
     # Loop control.
@@ -41,6 +56,11 @@ class Config:
     use_llm: bool = True
 
     log_dir: Path = Path("runs")
+
+    # Change in-game settings (in this browser profile) so the bot plays fast and
+    # isn't interrupted. Applied once at startup, then the page reloads.
+    auto_settings: bool = True
+    settings: dict = field(default_factory=lambda: dict(BOT_SETTINGS))
 
     def model_for(self, kind: str) -> str:
         return self.models.get(kind, self.model)

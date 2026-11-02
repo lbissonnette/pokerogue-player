@@ -872,6 +872,72 @@
     }
   };
 
+  /** Unlocked starters on the starter-select screen, for picking a team. */
+  BOT.starterCandidates = () => {
+    const s = scene();
+    const h = handler();
+    if (h?.constructor?.name !== "StarterSelectUiHandler") {
+      return { ok: false, error: `not on starter select (${h?.constructor?.name})` };
+    }
+    const pokerus = new Set(h.pokerusSpeciesIds ?? []);
+    const out = [];
+    for (const c of h.starterContainers ?? []) {
+      const sp = c.species;
+      const dex = safe(() => s.gameData.dexData[sp.speciesId]);
+      if (!dex || BigInt(dex.caughtAttr ?? 0) === 0n) {
+        continue;
+      }
+      out.push({
+        id: sp.speciesId,
+        name: sp.name,
+        types: [sp.type1, sp.type2].filter(t => t !== null && t !== undefined).map(typeName),
+        cost: safe(() => s.gameData.getSpeciesStarterValue(sp.speciesId), c.cost),
+        bst: sp.baseTotal,
+        pokerus: pokerus.has(sp.speciesId),
+      });
+    }
+    return { ok: true, budget: 10, candidates: out };
+  };
+
+  /**
+   * Make game settings bot-friendly (fast speed, no tutorials, no "switch?" prompts).
+   * Settings live in localStorage and are read at startup, so the caller reloads the
+   * page when this reports `changed`.
+   */
+  BOT.applySettings = desired => {
+    const key = "settings";
+    let data = null;
+    try {
+      data = JSON.parse(localStorage.getItem(key) || "null");
+    } catch (_) {
+      data = null;
+    }
+    if (!data || typeof data !== "object") {
+      const v = safe(() => scene().game.config.gameVersion);
+      if (!v) {
+        return { ok: false, error: "no game version available" };
+      }
+      data = { meta: { gameVersion: v } };
+    }
+    if (!data.meta?.gameVersion) {
+      return { ok: false, error: "settings have no version; leaving them alone" };
+    }
+    let changed = false;
+    for (const [cat, values] of Object.entries(desired)) {
+      data[cat] = data[cat] ?? {};
+      for (const [k, v] of Object.entries(values)) {
+        if (data[cat][k] !== v) {
+          data[cat][k] = v;
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+    return { ok: true, changed };
+  };
+
   /**
    * Start a run with the given starters, bypassing the starter-select grid.
    * `speciesIds` are national dex numbers (e.g. 4 = Charmander). Each must be unlocked.

@@ -51,6 +51,8 @@ def build_config(args: argparse.Namespace) -> Config:
         cfg.starters = [int(x) for x in args.starters.split(",")]
     if getattr(args, "no_llm", False):
         cfg.use_llm = False
+    if getattr(args, "no_auto_settings", False):
+        cfg.auto_settings = False
     return cfg
 
 
@@ -101,7 +103,9 @@ def main(argv: list[str] | None = None) -> None:
                       help="Per-decision model override, e.g. modifier=some/model (repeatable)")
     play.add_argument("--no-llm", action="store_true", help="Use only the rule-based policy")
     play.add_argument("--new", action="store_true", help="Start a new Classic run instead of continuing")
-    play.add_argument("--starters", help="Comma-separated national dex numbers, e.g. 4,7,1")
+    play.add_argument("--starters", help="Comma-separated national dex numbers, e.g. 4,7,1 (default: LLM picks)")
+    play.add_argument("--no-auto-settings", action="store_true",
+                      help="Don't change game speed/tutorial/battle-style settings")
     play.add_argument("--reveal-hidden", action="store_true", help="Show the model hidden enemy info")
     play.add_argument("--allow-overwrite-save", action="store_true")
     play.add_argument("--max-decisions", type=int)

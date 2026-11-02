@@ -52,3 +52,29 @@ def build_messages(decision: dict, notes: list[str], history: list[str]) -> list
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": "\n\n".join(parts)},
     ]
+
+
+STARTER_SYSTEM_PROMPT = """\
+You are choosing the starting team for a PokeRogue Classic run (200 waves, gets much harder \
+over time). Pick 1 to 6 Pokemon whose total cost is at most the budget. Good teams usually \
+spend the whole budget, cover many types, and include Pokemon that evolve into strong forms. \
+Pokemon marked pokerus gain experience faster.
+
+Reply with a JSON object only:
+{"starters": [<species id>, ...], "reason": "<one or two sentences>"}
+"""
+
+
+def build_starter_messages(candidates: list[dict], budget: int, error: str | None = None) -> list[dict]:
+    lines = [
+        f"{c['id']}: {c['name']} [{'/'.join(c['types'])}] cost {c['cost']} BST {c['bst']}"
+        + (" pokerus" if c.get("pokerus") else "")
+        for c in candidates
+    ]
+    content = f"Budget: {budget}\n\nAvailable starters (id: name [types] cost BST):\n" + "\n".join(lines)
+    if error:
+        content += f"\n\nYour previous answer was invalid: {error}. Try again."
+    return [
+        {"role": "system", "content": STARTER_SYSTEM_PROMPT},
+        {"role": "user", "content": content},
+    ]

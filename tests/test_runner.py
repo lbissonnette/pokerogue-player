@@ -18,6 +18,12 @@ class FakeGame:
         self.acts.append((seq, option_id))
         return {"ok": True}
 
+    async def starter_candidates(self):
+        return {"ok": True, "budget": 10, "candidates": [
+            {"id": 1, "name": "Bulbasaur", "types": ["GRASS"], "cost": 3, "bst": 318},
+            {"id": 4, "name": "Charmander", "types": ["FIRE"], "cost": 3, "bst": 309},
+        ]}
+
     async def choose_starters(self, ids):
         self.starters = ids
         return {"ok": True}
@@ -77,3 +83,9 @@ async def test_starter_select_uses_config(tmp_path):
     runner, game = make_runner(tmp_path, [{"kind": "starter_select", "seq": 1}], starters=[25])
     await runner.step()
     assert game.starters == [25]
+
+
+async def test_starter_select_without_config_uses_picker(tmp_path):
+    runner, game = make_runner(tmp_path, [{"kind": "starter_select", "seq": 1}])
+    await runner.step()  # no LLM client -> heuristic
+    assert sorted(game.starters) == [1, 4]

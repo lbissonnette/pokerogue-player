@@ -29,8 +29,10 @@ Log in once. The browser profile is kept in `.browser-profile/`, so later runs s
 pokerogue-player login
 ```
 
-Recommended in-game settings (set once, by hand): **Game Speed** 5x, **Battle Style** Set, and
-tutorials off. The bot works without them, just slower.
+After that, a run is fully hands-off: the bot picks the starters, makes every decision and
+performs every input until the run ends. On startup it also switches this browser profile's
+game settings to bot-friendly values (5x speed, Battle Style "Set", tutorials and EXP/HP-bar
+animations off) and reloads once. Pass `--no-auto-settings` to leave your settings alone.
 
 ## Usage
 
@@ -38,7 +40,10 @@ tutorials off. The bot works without them, just slower.
 # Continue the run in progress (default)
 pokerogue-player play
 
-# Start a new Classic run with Charmander, Squirtle and Bulbasaur (national dex numbers)
+# Start a new Classic run; the LLM picks the starting team from your unlocked starters
+pokerogue-player play --new
+
+# ...or pick the team yourself (national dex numbers)
 pokerogue-player play --new --starters 4,7,1
 
 # Choose models: a cheap one for battle turns, a stronger one for rewards and move learning
@@ -69,8 +74,9 @@ Save slots are never overwritten unless you pass `--allow-overwrite-save`.
 | Reward / shop / reroll / skip, and which Pokémon gets an item | LLM |
 | Learning a move when the moveset is full | LLM |
 | Biome choice and other yes/no or option menus | LLM |
-| Title screen, starter selection, save slot | Config |
-| "Switch before the next trainer Pokémon?" | Always no |
+| Starting team (within the 10-point budget) | LLM (best-stats fallback), or `--starters` |
+| Title screen, save slot | Config (continue vs `--new`; never overwrites a save) |
+| "Switch before the next trainer Pokémon?" | Turned off via Battle Style "Set" |
 | Mystery encounters | First option (to be improved) |
 | Text, animations, evolutions | Auto-advance |
 

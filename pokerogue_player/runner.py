@@ -12,7 +12,8 @@ from pathlib import Path
 from .config import Config
 from .game import Game
 from .llm import OpenRouterClient
-from .policy import Choice, LLMPolicy, Policy, RulePolicy, RunMemory
+from .policy import LLMPolicy, Policy, RulePolicy, RunMemory
+from .starters import choose_team
 
 log = logging.getLogger(__name__)
 
@@ -33,8 +34,10 @@ def pick_by_label(options: list[dict], *needles: str) -> dict | None:
 
 
 class Runner:
-    def __init__(self, config: Config, game: Game, policy: Policy, memory: RunMemory, run_dir: Path):
+    def __init__(self, config: Config, game: Game, policy: Policy, memory: RunMemory, run_dir: Path,
+                 client=None):
         self.config = config
+        self.client = client
         self.game = game
         self.policy = policy
         self.memory = memory
@@ -149,8 +152,19 @@ class Runner:
         await self._act(d, o["id"])
 
     async def _starters(self) -> None:
-        log.info("choosing starters %s", self.config.starters)
-        result = await self.game.choose_starters(self.config.starters)
+        ids = self.config.starters
+        reason = "from config"
+        if not ids:
+            info = await self.game.starter_candidates()
+            if not info.get("ok"):
+                raise StopRun(f"can't read starters: {info.get('error')}")
+            ids, reason = await choose_team(
+                info["candidates"], info.get("budget", 10), self.client,
+                self.config.model_for("starters"), self.config.temperature,
+            )
+        log.info("choosing starters %s (%s)", ids, reason)
+        self._write({"kind": "starters", "choice": ids, "reason": reason})
+        result = await self.game.choose_starters(ids)
         if not result.get("ok"):
             raise StopRun(f"starter selection failed: {result.get('error')}")
 
@@ -197,10 +211,17 @@ async def play(config: Config) -> None:
 
     game = Game(config)
     await game.start()
-    runner = Runner(config, game, policy, memory, run_dir)
+    runner = Runner(config, game, policy, memory, run_dir, client)
     try:
         if not await _wait_for_scene(game):
             raise SystemExit("Could not find the game scene. Is the bridge compatible with this PokeRogue version?")
+        if config.auto_settings:
+            result = await game.apply_settings(config.settings)
+            log.info("settings: %s", result)
+            if result.get("changed"):
+                await game.reload()
+                if not await _wait_for_scene(game):
+                    raise SystemExit("Game didn't come back after applying settings.")
         await runner.run()
     finally:
         runner.close()

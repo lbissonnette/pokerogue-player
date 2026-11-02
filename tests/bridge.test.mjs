@@ -326,3 +326,58 @@ test("unknown screens fall back to pressing Action", () => {
   const d = ctx.__prBot.getDecision();
   assert.equal(d.kind, "advance");
 });
+
+function fakeLocalStorage(initial = {}) {
+  const store = { ...initial };
+  return {
+    store,
+    getItem: k => (k in store ? store[k] : null),
+    setItem: (k, v) => {
+      store[k] = String(v);
+    },
+  };
+}
+
+test("applySettings merges into existing settings and reports changes", () => {
+  const ctx = loadBridge();
+  const ls = fakeLocalStorage({ settings: JSON.stringify({ meta: { gameVersion: "1.12.2" }, general: { gameSpeed: 3, playerGender: 1 } }) });
+  ctx.localStorage = ls;
+  ctx.__prScene = makeScene().scene;
+  const desired = { general: { gameSpeed: 5, battleStyle: 1 }, display: { enableMoveAnimations: false } };
+  assert.deepEqual(plain(ctx.__prBot.applySettings(desired)), { ok: true, changed: true });
+  const saved = JSON.parse(ls.store.settings);
+  assert.deepEqual(saved.general, { gameSpeed: 5, playerGender: 1, battleStyle: 1 });
+  assert.equal(saved.meta.gameVersion, "1.12.2");
+  assert.deepEqual(plain(ctx.__prBot.applySettings(desired)), { ok: true, changed: false });
+});
+
+test("applySettings creates settings with the game version when none exist", () => {
+  const ctx = loadBridge();
+  const ls = fakeLocalStorage();
+  ctx.localStorage = ls;
+  const { scene } = makeScene();
+  scene.game = { config: { gameVersion: "1.12.2.3" } };
+  ctx.__prScene = scene;
+  assert.equal(ctx.__prBot.applySettings({ general: { gameSpeed: 5 } }).changed, true);
+  assert.equal(JSON.parse(ls.store.settings).meta.gameVersion, "1.12.2.3");
+});
+
+test("starterCandidates lists only unlocked species with cost and types", () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  scene.gameData.dexData = { 1: { caughtAttr: 1 }, 4: { caughtAttr: 0 } };
+  scene.gameData.getSpeciesStarterValue = () => 3;
+  class StarterSelectUiHandler {
+    pokerusSpeciesIds = [1];
+    starterContainers = [
+      { species: { speciesId: 1, name: "Bulbasaur", type1: 11, type2: 3, baseTotal: 318 }, cost: 3 },
+      { species: { speciesId: 4, name: "Charmander", type1: 9, type2: null, baseTotal: 309 }, cost: 3 },
+    ];
+  }
+  scene.ui._handler = new StarterSelectUiHandler();
+  const r = plain(ctx.__prBot.starterCandidates());
+  assert.deepEqual(r.candidates, [
+    { id: 1, name: "Bulbasaur", types: ["GRASS", "POISON"], cost: 3, bst: 318, pokerus: true },
+  ]);
+});

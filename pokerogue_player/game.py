@@ -83,6 +83,15 @@ class Game:
     async def choose_starters(self, species_ids: list[int]) -> dict:
         return await self._call("(ids) => window.__prBot.chooseStarters(ids)", species_ids)
 
+    async def starter_candidates(self) -> dict:
+        return await self._call("() => window.__prBot.starterCandidates()")
+
+    async def apply_settings(self, desired: dict) -> dict:
+        return await self._call("(d) => window.__prBot.applySettings(d)", desired)
+
+    async def reload(self) -> None:
+        await self.page.reload(wait_until="domcontentloaded")
+
     async def screenshot(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         await self.page.screenshot(path=str(path))
