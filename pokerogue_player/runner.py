@@ -114,6 +114,12 @@ class Runner:
             log.debug("no safe options for %s", kind)
             return
 
+        if kind == "command" and not any(o["id"].startswith("move:") for o in options):
+            raise StopRun(
+                f"{d.get('acting')} has no usable moves listed; this is a bot bug, stopping instead of "
+                "playing blind. Please report the last lines of decisions.jsonl."
+            )
+
         # Loop protection: if we keep making the same choice on what is the same decision
         # (same screen, wave, turn and options), it isn't working; stop offering it.
         state = d.get("state") or {}

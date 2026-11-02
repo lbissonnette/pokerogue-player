@@ -508,3 +508,39 @@ test("mystery encounter: reads labels and tooltips, skips disabled options, sele
   await ctx.__prBot.act(d.seq, "me:2");
   assert.deepEqual(plain(h.pressed), [2]);
 });
+
+test("chooseStarters uses the starter screen's moveset, pokerus and passive; refuses empty movesets", async () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  scene.gameData.dexData = { 1: { caughtAttr: 1, natureAttr: 0, ivs: [31] }, 4: { caughtAttr: 1, natureAttr: 0, ivs: [1] } };
+  scene.gameData.getSpeciesStarterValue = () => 3;
+  scene.gameData.getNaturesForAttr = () => [5];
+  scene.gameData.starterData = { 1: { passiveAttr: 3 }, 4: { passiveAttr: 1 } };
+  scene.gameMode.getStartingMoney = () => 1000;
+  const movesets = { 1: [33, 45, 75], 4: [] };
+  let started = null;
+  class StarterSelectUiHandler {
+    pokerusSpeciesIds = [4];
+    starterMoveset = null;
+    starterSelectCallback = st => {
+      started = st;
+    };
+    populateStarterMoveset(id) {
+      this.starterMoveset = movesets[id];
+    }
+  }
+  const h = new StarterSelectUiHandler();
+  scene.ui._handler = h;
+  const bad = plain(await ctx.__prBot.chooseStarters([1, 4]));
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /moveset/);
+  assert.equal(started, null, "no run started with a broken moveset");
+  movesets[4] = [10, 45];
+  assert.equal((await ctx.__prBot.chooseStarters([1, 4])).ok, true);
+  const st = plain(started);
+  assert.deepEqual(st.map(x => x.moveset), [[33, 45, 75], [10, 45]]);
+  assert.deepEqual(st.map(x => x.pokerus), [false, true]);
+  assert.deepEqual(st.map(x => x.passive), [true, false]);
+  assert.deepEqual(st.map(x => x.nature), [5, 5]);
+});

@@ -49,13 +49,13 @@ async def test_auto_and_decision_flow(tmp_path):
         {"kind": "advance", "seq": 1},
         {"kind": "loading", "seq": 2},
         {"kind": "command", "seq": 3, "acting": "A", "state": {"wave": 1, "party": []},
-         "options": [{"id": "run", "label": "Run"}]},
+         "options": [{"id": "move:0", "label": "Tackle", "move": {"power": 40}}, {"id": "run", "label": "Run"}]},
     ])
     for _ in range(3):
         await runner.step()
     runner.close()
-    assert game.acts == [(1, "__auto__"), (3, "run")]
-    assert '"choice": "run"' in (tmp_path / "decisions.jsonl").read_text()
+    assert game.acts == [(1, "__auto__"), (3, "move:0")]
+    assert '"choice": "move:0"' in (tmp_path / "decisions.jsonl").read_text()
 
 
 async def test_title_new_game_then_stop_when_back_at_title(tmp_path):
@@ -162,3 +162,12 @@ async def test_repeated_failing_choice_is_excluded_then_backs_out(tmp_path):
     # healthiest (slot:2) twice, then slot:1 twice, then everything failed -> cancel
     assert game.acts[:4] == [(1, "slot:2"), (2, "slot:2"), (3, "slot:1"), (4, "slot:1")]
     assert game.acts[4] == ("cancel",)
+
+
+async def test_command_without_moves_stops(tmp_path):
+    d = {"kind": "command", "seq": 1, "acting": "Rowlet", "state": {"wave": 1},
+         "options": [{"id": "switch:1", "label": "Switch"}, {"id": "run", "label": "Run"}]}
+    runner, game = make_runner(tmp_path, [d])
+    with pytest.raises(StopRun):
+        await runner.step()
+    assert game.acts == []

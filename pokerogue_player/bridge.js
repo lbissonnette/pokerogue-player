@@ -1076,22 +1076,38 @@
     }
     const starters = [];
     let cost = 0;
+    const pokerus = new Set(h.pokerusSpeciesIds ?? []);
     for (const id of speciesIds) {
       cost += safe(() => s.gameData.getSpeciesStarterValue(id), 0);
       const dex = s.gameData.dexData[id];
       if (!dex || BigInt(dex.caughtAttr ?? 0) === 0n) {
         return { ok: false, error: `species ${id} is not unlocked` };
       }
+      // Use the starter screen's own logic for the moveset (saved moveset, learnable
+      // starter moves and unlocked egg moves), exactly as picking it by hand would.
+      let moveset = null;
+      try {
+        h.populateStarterMoveset(id, 0);
+        moveset = Array.isArray(h.starterMoveset) ? h.starterMoveset.slice(0, 4) : null;
+      } catch (e) {
+        BOT.errors.push(`populateStarterMoveset(${id}) failed: ${e}`);
+      }
+      if (!moveset?.length) {
+        return { ok: false, error: `could not determine a moveset for species ${id}; not starting a broken run` };
+      }
       const natures = safe(() => s.gameData.getNaturesForAttr(dex.natureAttr), [0]);
+      const passiveAttr = safe(() => s.gameData.starterData[id].passiveAttr, 0);
       starters.push({
         speciesId: id,
         shiny: false,
         variant: 0,
         formIndex: 0,
         abilityIndex: 0,
-        passive: false,
+        // Passive.UNLOCKED = 1, Passive.ENABLED = 2; on only when unlocked and enabled.
+        passive: (passiveAttr & 3) === 3,
         nature: natures[0] ?? 0,
-        pokerus: false,
+        moveset,
+        pokerus: pokerus.has(id),
         ivs: dex.ivs,
       });
     }
