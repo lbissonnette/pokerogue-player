@@ -58,7 +58,8 @@ STARTER_SYSTEM_PROMPT = """\
 You are choosing the starting team for a PokeRogue Classic run (200 waves, gets much harder \
 over time). Pick 1 to 6 Pokemon whose total cost is at most the budget. Good teams usually \
 spend the whole budget, cover many types, and include Pokemon that evolve into strong forms. \
-Pokemon marked pokerus gain experience faster.
+Pokemon marked pokerus gain experience faster: the team MUST include at least one of them when \
+any is affordable.
 
 Reply with a JSON object only:
 {"starters": [<species id>, ...], "reason": "<one or two sentences>"}

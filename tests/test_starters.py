@@ -47,3 +47,27 @@ async def test_llm_team_with_retry_on_invalid():
 async def test_llm_failure_falls_back():
     ids, reason = await choose_team(CANDS, 10, FakeClient([LLMError("x"), LLMError("y")]), "m")
     assert sorted(ids) == [1, 4, 7, 10] and reason.startswith("[fallback]")
+
+
+PKRS = [dict(c) for c in CANDS]
+PKRS[3]["pokerus"] = True  # Dratini
+
+
+def test_pokerus_required_in_validation_and_heuristic():
+    assert "pokerus" in validate_team([1, 4, 7], PKRS, 10)
+    assert validate_team([147, 7], PKRS, 10) is None
+    team = heuristic_team(PKRS, 10)
+    assert 147 in team and validate_team(team, PKRS, 10) is None
+
+
+def test_pokerus_not_required_when_unaffordable():
+    cands = [dict(c) for c in CANDS]
+    cands[3]["cost"] = 11
+    cands[3]["pokerus"] = True
+    assert validate_team([1, 4, 7], cands, 10) is None
+
+
+async def test_llm_is_retried_when_it_skips_pokerus():
+    client = FakeClient([{"starters": [1, 4, 7]}, {"starters": [147, 1]}])
+    ids, _ = await choose_team(PKRS, 10, client, "m")
+    assert ids == [147, 1] and "pokerus" in client.calls[1][1]["content"]

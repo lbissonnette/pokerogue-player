@@ -12,6 +12,11 @@ log = logging.getLogger(__name__)
 MAX_PARTY = 6
 
 
+def pokerus_required(candidates: list[dict], budget: int) -> bool:
+    """A team must include a Pokerus starter whenever one is affordable."""
+    return any(c.get("pokerus") and 0 < c["cost"] <= budget for c in candidates)
+
+
 def validate_team(ids: list, candidates: list[dict], budget: int) -> str | None:
     """Return an error message, or None if `ids` is a legal team."""
     by_id = {c["id"]: c for c in candidates}
@@ -27,11 +32,12 @@ def validate_team(ids: list, candidates: list[dict], budget: int) -> str | None:
     cost = sum(by_id[i]["cost"] for i in ids)
     if cost > budget:
         return f"total cost {cost} exceeds budget {budget}"
+    if pokerus_required(candidates, budget) and not any(by_id[i].get("pokerus") for i in ids):
+        return "the team must include at least one Pokemon marked pokerus"
     return None
 
 
-def heuristic_team(candidates: list[dict], budget: int) -> list[int]:
-    """Maximise total base stats within the budget and party size (small knapsack)."""
+def _knapsack(candidates: list[dict], budget: int, max_size: int) -> tuple[int, list[int]]:
     # best[(cost, count)] = (bst_total, ids)
     best: dict[tuple[int, int], tuple[int, list[int]]] = {(0, 0): (0, [])}
     for c in sorted(candidates, key=lambda c: c["id"]):
@@ -39,13 +45,28 @@ def heuristic_team(candidates: list[dict], budget: int) -> list[int]:
             continue
         for (cost, count), (bst, ids) in list(best.items()):
             nc, nn = cost + c["cost"], count + 1
-            if nc > budget or nn > MAX_PARTY:
+            if nc > budget or nn > max_size:
                 continue
             cand = (bst + c["bst"], ids + [c["id"]])
             if cand[0] > best.get((nc, nn), (-1, []))[0]:
                 best[(nc, nn)] = cand
-    _, ids = max(best.values(), key=lambda v: v[0])
-    return ids
+    return max(best.values(), key=lambda v: v[0])
+
+
+def heuristic_team(candidates: list[dict], budget: int) -> list[int]:
+    """Maximise total base stats within the budget and party size, including a Pokerus
+    starter when one is affordable."""
+    if not pokerus_required(candidates, budget):
+        return _knapsack(candidates, budget, MAX_PARTY)[1]
+    best: tuple[int, list[int]] = (-1, [])
+    for p in candidates:
+        if not p.get("pokerus") or not 0 < p["cost"] <= budget:
+            continue
+        rest = [c for c in candidates if c["id"] != p["id"]]
+        bst, ids = _knapsack(rest, budget - p["cost"], MAX_PARTY - 1)
+        if bst + p["bst"] > best[0]:
+            best = (bst + p["bst"], [p["id"]] + ids)
+    return best[1]
 
 
 async def choose_team(candidates: list[dict], budget: int, client=None, model: str | None = None,

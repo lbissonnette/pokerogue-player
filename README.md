@@ -74,7 +74,7 @@ Save slots are never overwritten unless you pass `--allow-overwrite-save`.
 | Reward / shop / reroll / skip, and which Pokémon gets an item | LLM |
 | Learning a move when the moveset is full | LLM |
 | Biome choice and other yes/no or option menus | LLM |
-| Starting team (within the 10-point budget) | LLM (best-stats fallback), or `--starters` |
+| Starting team (10-point budget, always includes a Pokérus starter when one is affordable) | LLM (best-stats fallback), or `--starters` |
 | Title screen, save slot | Config (continue vs `--new`; never overwrites a save) |
 | "Switch before the next trainer Pokémon?" | Turned off via Battle Style "Set" |
 | Mystery encounters | First option (to be improved) |
