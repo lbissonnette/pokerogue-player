@@ -5,3 +5,4 @@ __pycache__/
 .browser-profile/
 runs/
 .pytest_cache/
+.bot-state.json

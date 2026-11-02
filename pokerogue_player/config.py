@@ -43,11 +43,13 @@ class Config:
     reveal_hidden: bool = False
 
     # Run setup.
-    title_choice: str = "continue"  # "continue" an existing run, or "new" (Classic)
+    # "new": start a new Classic run in an EMPTY save slot (the bot never overwrites saves).
+    # "continue": resume the run the bot itself started last time (recorded in state_file).
+    title_choice: str = "new"
     game_mode_label: str = "Classic"
     # National dex numbers. None = let the LLM (or, without an LLM, a simple heuristic) pick.
     starters: list[int] | None = None
-    allow_overwrite_save: bool = False
+    state_file: Path = Path(".bot-state.json")
 
     # Loop control.
     poll_interval_s: float = 0.15

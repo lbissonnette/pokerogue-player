@@ -51,7 +51,15 @@
   const BALLS = ["POKEBALL", "GREAT_BALL", "ULTRA_BALL", "ROGUE_BALL", "MASTER_BALL"];
   const BATTLE_TYPE = ["WILD", "TRAINER", "CLEAR", "MYSTERY_ENCOUNTER"];
   const STAT_NAMES = ["ATK", "DEF", "SPATK", "SPDEF", "SPD", "ACC", "EVA"];
-  const UiMode = { MESSAGE: 0, TITLE: 1, COMMAND: 2, FIGHT: 3, BALL: 4, TARGET_SELECT: 5, MODIFIER_SELECT: 6, PARTY: 8 };
+  const UiMode = {
+    MESSAGE: 0, TITLE: 1, COMMAND: 2, FIGHT: 3, BALL: 4, TARGET_SELECT: 5, MODIFIER_SELECT: 6,
+    SAVE_SLOT: 7, PARTY: 8, CONFIRM: 14, OPTION_SELECT: 15, MENU: 16, MENU_OPTION_SELECT: 17,
+  };
+  /**
+   * Labels the bot must never select, anywhere. Save data is the user's; nothing that
+   * deletes, overwrites or erases it is ever a legal option.
+   */
+  const DANGEROUS_LABEL = /delete|overwrite|erase|wipe|clear data|reset/i;
   const Command = { FIGHT: 0, BALL: 1, POKEMON: 2, RUN: 3, TERA: 4 };
   const Button = { UP: 0, DOWN: 1, LEFT: 2, RIGHT: 3, SUBMIT: 4, ACTION: 5, CANCEL: 6 };
   const PartyOption = {
@@ -79,6 +87,7 @@
     errors: [],
     hooked: false,
     busy: false,
+    allowLoad: false,
   };
   window.__prBot = BOT;
 
@@ -365,6 +374,9 @@
     if (!opt) {
       throw new Error(`no option ${index}`);
     }
+    if (DANGEROUS_LABEL.test(cleanText(opt.label))) {
+      throw new Error(`refusing to select "${cleanText(opt.label)}"`);
+    }
     if (opt.handler()) {
       if (!opt.keepOpen) {
         h.clear();
@@ -595,9 +607,9 @@
 
   function menuDecision(kind) {
     const h = handler();
-    const options = (h.options ?? []).map((o, i) =>
-      opt(`opt:${i}`, cleanText(o.label), { type: "option", index: i }, { disabled: o.selectable === false }),
-    );
+    const options = (h.options ?? [])
+      .map((o, i) => opt(`opt:${i}`, cleanText(o.label), { type: "option", index: i }, { disabled: o.selectable === false }))
+      .filter(o => !DANGEROUS_LABEL.test(o.label));
     return { kind, prompt: BOT.log[BOT.log.length - 1] ?? "", options };
   }
 
@@ -614,6 +626,16 @@
     const pn = phaseName();
     const phase = currentPhase();
     const plan = phase?.__prPlan;
+
+    // Save-slot safety: anything layered over the save-slot screen (the overwrite
+    // confirmation, the Load/Rename/Delete menu) is handled here and never reaches the LLM.
+    const chain = safe(() => s.ui.modeChain, []) ?? [];
+    if (hn !== "SaveSlotSelectUiHandler" && (s.ui.mode === UiMode.SAVE_SLOT || chain.includes(UiMode.SAVE_SLOT))) {
+      return saveGuardDecision(hn);
+    }
+    if (hn !== "SaveSlotSelectUiHandler") {
+      BOT.allowLoad = false;
+    }
 
     switch (hn) {
       case "LoginOrRegisterUiHandler":
@@ -684,9 +706,31 @@
     }
   }
 
+  function saveGuardDecision(hn) {
+    const h = handler();
+    if (hn === "ConfirmUiHandler") {
+      // The only confirm over the save-slot screen is "overwrite this save?" -> always No.
+      return { kind: "auto", act: { type: "option", index: 1, guard: "decline_overwrite" } };
+    }
+    const options = h?.options ?? [];
+    if (options.length) {
+      const load = options.findIndex(o => /^\s*load/i.test(cleanText(o.label)));
+      if (load >= 0 && BOT.allowLoad) {
+        return { kind: "auto", act: { type: "option", index: load, guard: "load_only" } };
+      }
+      const cancel = options.findIndex(o => /cancel/i.test(cleanText(o.label)));
+      return { kind: "auto", act: { type: "option", index: cancel >= 0 ? cancel : options.length - 1, guard: "cancel" } };
+    }
+    return { kind: "auto", act: { type: "press", button: Button.ACTION } };
+  }
+
+  function slotOccupied(sl) {
+    return !!sl && (!!sl.hasData || !!sl.malformed);
+  }
+
   function saveSlotDecision() {
     const h = handler();
-    const slots = (h.sessionSlots ?? []).map((sl, i) => ({ slot: i, has_data: !!sl.hasData }));
+    const slots = (h.sessionSlots ?? []).map((sl, i) => ({ slot: i, has_data: slotOccupied(sl) }));
     return {
       kind: "save_slot",
       save_mode: h.uiMode === 1 ? "SAVE" : "LOAD",
@@ -836,7 +880,23 @@
       }
       case "save_slot": {
         const h = handler();
-        h.setCursor(act.slot);
+        if (h.constructor.name !== "SaveSlotSelectUiHandler") {
+          throw new Error("not on the save slot screen");
+        }
+        const saving = h.uiMode === 1; // SaveSlotUiMode.SAVE
+        h.setCursor(act.slot - (h.scrollCursor ?? 0));
+        const index = h.cursor + (h.scrollCursor ?? 0);
+        const slot = h.sessionSlots?.[index];
+        if (index !== act.slot || !slot) {
+          throw new Error(`cursor landed on slot ${index}, wanted ${act.slot}`);
+        }
+        if (saving && slotOccupied(slot)) {
+          throw new Error(`refusing to save over occupied slot ${index}`);
+        }
+        if (!saving && (!slot.hasData || slot.malformed)) {
+          throw new Error(`slot ${index} has no loadable run`);
+        }
+        BOT.allowLoad = !saving;
         h.processInput(Button.ACTION);
         return;
       }

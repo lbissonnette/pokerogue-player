@@ -381,3 +381,85 @@ test("starterCandidates lists only unlocked species with cost and types", () => 
     { id: 1, name: "Bulbasaur", types: ["GRASS", "POISON"], cost: 3, bst: 318, pokerus: true },
   ]);
 });
+
+function saveSlotHandler(slots, uiMode) {
+  class SaveSlotSelectUiHandler {
+    cursor = 0;
+    scrollCursor = 0;
+    pressed = 0;
+    constructor() {
+      this.uiMode = uiMode;
+      this.sessionSlots = slots;
+    }
+    setCursor(c) {
+      this.cursor = c;
+    }
+    processInput() {
+      this.pressed++;
+    }
+  }
+  return new SaveSlotSelectUiHandler();
+}
+
+test("save slot: never saves over an occupied (or malformed) slot", async () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  const h = saveSlotHandler([{ hasData: true }, { hasData: false, malformed: true }, { hasData: false }], 1);
+  scene.ui._handler = h;
+  scene._phase = { phaseName: "SelectStarterPhase" };
+  let d = ctx.__prBot.getDecision();
+  assert.deepEqual(plain(d.slots.map(x => x.has_data)), [true, true, false]);
+  for (const id of ["slot:0", "slot:1"]) {
+    const r = await ctx.__prBot.act(d.seq, id);
+    assert.equal(r.ok, false);
+    assert.match(r.error, /refusing to save over occupied slot/);
+    d = ctx.__prBot.getDecision();
+  }
+  assert.equal(h.pressed, 0);
+  assert.equal((await ctx.__prBot.act(d.seq, "slot:2")).ok, true);
+  assert.equal(h.pressed, 1);
+});
+
+test("save slot guard: overwrite confirm is always answered No, delete menus are cancelled", async () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  const picked = [];
+  const mk = name => ({ label: name, handler: () => picked.push(name) || true });
+  class ConfirmUiHandler {
+    options = [mk("Yes"), mk("No")];
+    clear() {}
+  }
+  scene.ui._handler = new ConfirmUiHandler();
+  scene.ui.mode = 14;
+  scene.ui.modeChain = [7];
+  let d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "auto");
+  await ctx.__prBot.act(d.seq, "__auto__");
+  assert.deepEqual(picked, ["No"]);
+
+  class OptionSelectUiHandler {
+    options = [mk("Load Game"), mk("Rename Run"), mk("Delete Run"), mk("Cancel")];
+    clear() {}
+  }
+  scene.ui._handler = new OptionSelectUiHandler();
+  scene.ui.mode = 17;
+  d = ctx.__prBot.getDecision();
+  await ctx.__prBot.act(d.seq, "__auto__");
+  assert.deepEqual(picked, ["No", "Cancel"], "no load without the bot having picked its own slot");
+});
+
+test("dangerous menu options are never offered or executed", async () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  class OptionSelectUiHandler {
+    options = [{ label: "Delete Run", handler: () => true }, { label: "Keep going", handler: () => true }];
+    clear() {}
+  }
+  scene.ui._handler = new OptionSelectUiHandler();
+  scene._phase = { phaseName: "SomePhase" };
+  const d = ctx.__prBot.getDecision();
+  assert.deepEqual(plain(d.options.map(o => o.label)), ["Keep going"]);
+});

@@ -42,11 +42,11 @@ def build_config(args: argparse.Namespace) -> Config:
         cfg.model = args.model
     if getattr(args, "model_for", None):
         cfg.models = _parse_models(args.model_for)
-    for name in ("reveal_hidden", "allow_overwrite_save", "max_decisions"):
+    for name in ("reveal_hidden", "max_decisions"):
         if hasattr(args, name) and getattr(args, name) is not None:
             setattr(cfg, name, getattr(args, name))
-    if getattr(args, "new", False):
-        cfg.title_choice = "new"
+    if getattr(args, "resume", False):
+        cfg.title_choice = "continue"
     if getattr(args, "starters", None):
         cfg.starters = [int(x) for x in args.starters.split(",")]
     if getattr(args, "no_llm", False):
@@ -102,12 +102,12 @@ def main(argv: list[str] | None = None) -> None:
     play.add_argument("--model-for", action="append", metavar="KIND=MODEL",
                       help="Per-decision model override, e.g. modifier=some/model (repeatable)")
     play.add_argument("--no-llm", action="store_true", help="Use only the rule-based policy")
-    play.add_argument("--new", action="store_true", help="Start a new Classic run instead of continuing")
+    play.add_argument("--continue", dest="resume", action="store_true",
+                      help="Resume the run the bot started last time (default: start a new run in an empty slot)")
     play.add_argument("--starters", help="Comma-separated national dex numbers, e.g. 4,7,1 (default: LLM picks)")
     play.add_argument("--no-auto-settings", action="store_true",
                       help="Don't change game speed/tutorial/battle-style settings")
     play.add_argument("--reveal-hidden", action="store_true", help="Show the model hidden enemy info")
-    play.add_argument("--allow-overwrite-save", action="store_true")
     play.add_argument("--max-decisions", type=int)
 
     sub.add_parser("inspect", help="Print what the bridge sees, without acting")

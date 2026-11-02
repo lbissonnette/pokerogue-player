@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,8 @@ from .starters import choose_team
 log = logging.getLogger(__name__)
 
 PASSIVE_KINDS = {"loading", "busy", "wait"}
+# Never offered to the policy, whatever the bridge sends (the bridge filters these too).
+DANGEROUS_LABEL = re.compile(r"delete|overwrite|erase|wipe|clear data|reset", re.I)
 AUTO_KINDS = {"advance", "auto"}
 
 
@@ -99,9 +102,10 @@ class Runner:
             await self._title(d)
             return
 
-        options = d.get("options") or []
+        options = [o for o in (d.get("options") or []) if not DANGEROUS_LABEL.search(o.get("label", ""))]
+        d["options"] = options
         if not options:
-            log.debug("no options for %s; pressing action", kind)
+            log.debug("no safe options for %s", kind)
             return
 
         t0 = time.monotonic()
@@ -141,15 +145,32 @@ class Runner:
         if self._started_run and d.get("phase") == "TitlePhase" and d.get("kind") == "title":
             raise StopRun("back at the title screen (run over)")
         if self.config.title_choice == "continue":
-            o = pick_by_label(options, "Continue", "Load Game")
+            # Never the title's "Continue": it resumes whichever slot was played last, which
+            # may be one of your own runs. "Load Game" lets us pick the bot's recorded slot.
+            if self._bot_slot() is None:
+                raise StopRun(f"no bot-started run recorded in {self.config.state_file}; use a new run")
+            o = pick_by_label(options, "Load Game")
         else:
             o = pick_by_label(options, self.config.game_mode_label, "New Game")
         if not o:
             raise StopRun(f"can't find a title option for {self.config.title_choice!r}: {[x['label'] for x in options]}")
         log.info("title: %s", o["label"])
-        if "continue" in o["label"].lower() or self.config.game_mode_label.lower() in o["label"].lower():
+        if self.config.game_mode_label.lower() in o["label"].lower():
             self._started_run = True
         await self._act(d, o["id"])
+
+    def _bot_slot(self) -> int | None:
+        try:
+            return int(json.loads(self.config.state_file.read_text())["slot"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
+    def _record_bot_slot(self, slot: int) -> None:
+        self.config.state_file.write_text(json.dumps({
+            "slot": slot,
+            "url": self.config.url,
+            "started": datetime.now(timezone.utc).isoformat(),
+        }))
 
     async def _starters(self) -> None:
         ids = self.config.starters
@@ -169,18 +190,26 @@ class Runner:
             raise StopRun(f"starter selection failed: {result.get('error')}")
 
     async def _save_slot(self, d: dict) -> None:
+        """Pick a save slot. The bot NEVER saves over an occupied slot: it uses an empty one or
+        stops. It only ever loads the slot it recorded when it started its own run."""
         options = d.get("options") or []
         if d.get("save_mode") == "SAVE":
-            empty = [o for o in options if not o.get("has_data")]
-            target = empty[0] if empty else (options[0] if self.config.allow_overwrite_save else None)
-            if not target:
-                raise StopRun("all save slots are full; free one or pass --allow-overwrite-save")
+            empty = [o for o in options if o.get("has_data") is False]
+            if not empty:
+                raise StopRun("every save slot is in use; the bot won't overwrite one. Free a slot to start a new run.")
+            target = empty[0]
+            slot = int(target["id"].split(":")[1])
         else:
-            target = next((o for o in options if o.get("has_data")), None)
+            slot = self._bot_slot()
+            target = next((o for o in options if o["id"] == f"slot:{slot}" and o.get("has_data")), None)
             if not target:
-                raise StopRun("no saved run to load")
+                raise StopRun(f"the bot's recorded run (slot {slot}) isn't there any more")
         log.info("save slot: %s", target["label"])
-        await self._act(d, target["id"])
+        result = await self._act(d, target["id"])
+        if result.get("ok"):
+            if d.get("save_mode") == "SAVE":
+                self._record_bot_slot(slot)
+            self._started_run = True
 
     async def _watchdog(self, d: dict) -> None:
         state = d.get("state") or {}

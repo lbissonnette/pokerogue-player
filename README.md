@@ -37,14 +37,14 @@ animations off) and reloads once. Pass `--no-auto-settings` to leave your settin
 ## Usage
 
 ```bash
-# Continue the run in progress (default)
+# Start a new Classic run in an empty save slot; the LLM picks the starting team
 pokerogue-player play
 
-# Start a new Classic run; the LLM picks the starting team from your unlocked starters
-pokerogue-player play --new
-
 # ...or pick the team yourself (national dex numbers)
-pokerogue-player play --new --starters 4,7,1
+pokerogue-player play --starters 4,7,1
+
+# Resume the run the bot started last time (never one of yours)
+pokerogue-player play --continue
 
 # Choose models: a cheap one for battle turns, a stronger one for rewards and move learning
 pokerogue-player play --model some/cheap-model --model-for modifier=some/strong-model --model-for learn_move=some/strong-model
@@ -62,7 +62,19 @@ plus screenshots when the bot gets stuck. Token usage and cost are logged at the
 By default the model only sees what a human would see: enemy HP as a percentage and only enemy
 moves that have been used. `--reveal-hidden` gives it exact HP, natures and full enemy movesets.
 
-Save slots are never overwritten unless you pass `--allow-overwrite-save`.
+### Your save files are never touched
+
+- A new run only ever goes into an **empty** save slot. If all slots are full, the bot stops
+  and tells you; there is no option to override this.
+- The bridge refuses to press Action on an occupied slot while saving, even if asked to.
+- Anything that appears over the save-slot screen is answered by fixed rules and never reaches
+  the LLM: the "overwrite this save?" confirmation is always answered **No**, and the slot menu
+  (Load / Rename / Delete) is cancelled unless the bot is loading its own run.
+- Any menu option labelled delete / overwrite / erase / reset is removed before the LLM sees the
+  options, and is refused if anything tries to select it (checked in both Python and the bridge).
+- The bot never uses the title screen's "Continue" (it resumes whichever slot you played last).
+  `--continue` uses "Load Game" and only loads the slot recorded in `.bot-state.json` when the
+  bot started its run.
 
 ## What it handles today
 
@@ -75,7 +87,7 @@ Save slots are never overwritten unless you pass `--allow-overwrite-save`.
 | Learning a move when the moveset is full | LLM |
 | Biome choice and other yes/no or option menus | LLM |
 | Starting team (10-point budget, always includes a Pokérus starter when one is affordable) | LLM (best-stats fallback), or `--starters` |
-| Title screen, save slot | Config (continue vs `--new`; never overwrites a save) |
+| Title screen, save slot | Fixed rules: new run in an empty slot, or `--continue` the bot's own run |
 | "Switch before the next trainer Pokémon?" | Turned off via Battle Style "Set" |
 | Mystery encounters | First option (to be improved) |
 | Text, animations, evolutions | Auto-advance |
