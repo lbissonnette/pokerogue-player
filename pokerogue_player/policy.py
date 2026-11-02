@@ -90,7 +90,14 @@ class RulePolicy:
         for o in options:
             if not o["id"].startswith("move:"):
                 continue
-            score = _move_score(o.get("move") or {}, types)
+            move = o.get("move") or {}
+            if "target_side" in o:
+                # "move on target" option: score against that target only; never hit an ally.
+                if o["target_side"] == "ally":
+                    continue
+                x = o.get("target_effectiveness")
+                move = {**move, "effectiveness": {o.get("target_name", "?"): 1.0 if x is None else x}}
+            score = _move_score(move, types)
             if score > best_score:
                 best, best_score = o, score
         if best:

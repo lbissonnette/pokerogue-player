@@ -81,7 +81,7 @@ moves that have been used. `--reveal-hidden` gives it exact HP, natures and full
 | Situation | Who decides |
 |---|---|
 | Battle turn: move, switch, Poké Ball, run | LLM (rules fallback) |
-| Target selection in double battles | LLM |
+| Target selection in double battles: offered as "move on target" options in the battle turn, so move and target are one decision | LLM |
 | Replacement after a faint | LLM |
 | Reward / shop / reroll / skip. Items used on a Pokémon are offered as "item on Pokémon" pairs (only targets the item would affect), so the item and target are one decision | LLM |
 | Learning a move when the moveset is full | LLM |
@@ -98,7 +98,8 @@ PokeRogue's production build keeps class and function names (`keepNames`), so th
 find the `BattleScene` and call the same UI handlers and phase methods the game's own test suite
 uses (`CommandPhase.handleCommand`, `PartyUiHandler.processInput`, ...). It finds the scene in
 two ways: a one-shot `Object.prototype.sys` setter that catches Phaser's scene construction, and,
-as a fallback, a patch to `initGlobalScene` in the bundle as it's downloaded. The small enum tables
+as a fallback, a patch to `initGlobalScene` in the bundle as it's downloaded. The same patch
+exposes the game's `getMoveTargets`, which says whether a move needs a target in doubles. The small enum tables
 it needs (types, statuses, natures, biomes) are mirrored at the top of `bridge.js`. If PokeRogue
 changes those, update them there.
 

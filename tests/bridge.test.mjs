@@ -612,3 +612,38 @@ test("targeted rewards become one option per valid target, and the plan answers 
   assert.equal(d.kind, "party");
   assert.equal(d.item, "Revive");
 });
+
+test("doubles: single-target moves become move-on-target options and the plan answers the target screen", async () => {
+  const ctx = loadBridge();
+  const { scene, phase, pika, enemy } = makeScene();
+  ctx.__prScene = scene;
+  const enemy2 = mon("Magikarp", { id: 129, onField: true, player: false, types: [10] });
+  scene.getEnemyField = () => [enemy, enemy2];
+  scene.getField = () => [pika, null, enemy, enemy2];
+  scene.currentBattle.double = true;
+  // Thunderbolt is single-target; Quick Attack pretends to be a spread move.
+  ctx.__prGetMoveTargets = (_user, moveId) =>
+    moveId === 1 ? { targets: [2, 3], multiple: false } : { targets: [2, 3], multiple: true };
+  let d = ctx.__prBot.getDecision();
+  const moves = d.options.filter(o => o.id.startsWith("move:"));
+  assert.deepEqual(plain(moves.map(o => o.id)), ["move:0@target:2", "move:0@target:3", "move:1"]);
+  assert.match(moves[0].label, /^Use Thunderbolt on Gyarados \(enemy, 2x\)/);
+  assert.match(moves[2].label, /hits Gyarados and Magikarp/);
+
+  await ctx.__prBot.act(d.seq, "move:0@target:3");
+  assert.deepEqual(plain(phase.calls), [[0, 0]]);
+
+  const picked = [];
+  class TargetSelectUiHandler {
+    targets = [2, 3];
+    targetSelectCallback = t => picked.push(t);
+  }
+  scene.ui._handler = new TargetSelectUiHandler();
+  scene._phase = { phaseName: "SelectTargetPhase" };
+  d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "auto");
+  await ctx.__prBot.act(d.seq, "__auto__");
+  assert.deepEqual(plain(picked), [[3]]);
+  // Plan spent: if the screen comes back, ask normally.
+  assert.equal(ctx.__prBot.getDecision().kind, "target");
+});

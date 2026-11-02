@@ -427,20 +427,42 @@
     const options = [];
     const moveset = user.getMoveset().filter(Boolean);
     const anyUsable = moveset.some(pm => safe(() => pm.isUsable(user, false, true)[0], true));
+    BOT.pendingMoveTarget = null;
+    const field = s.getField();
+    const getTargets = window.__prGetMoveTargets;
     moveset.forEach((pm, i) => {
       const usable = safe(() => pm.isUsable(user, false, true)[0], true);
       if (!usable && anyUsable) {
         return;
       }
       const m = moveInfo(user, pm, enemies);
+      const stats = `${m.type} ${m.category}, pow ${m.power}, acc ${m.accuracy}, PP ${m.pp ?? "-"}/${m.max_pp ?? "-"}`;
+      // In doubles, a single-target move makes the game ask for a target. Offer each
+      // target as its own option so move and target are one decision. getMoveTargets is
+      // the game's own function (exposed by the bundle patch in game.py).
+      const mt = typeof getTargets === "function" ? safe(() => getTargets(user, pm.moveId), null) : null;
+      const targets = (mt?.targets ?? []).filter(bi => field[bi]);
+      if (mt && !mt.multiple && targets.length > 1) {
+        for (const bi of targets) {
+          const t = field[bi];
+          const side = bi >= 2 ? "enemy" : "ally";
+          const x = m.category === "STATUS" ? null : safe(() => t.getMoveEffectiveness(user, pm.getMove()), null);
+          options.push(
+            opt(
+              `move:${i}@target:${bi}`,
+              `Use ${m.name} on ${t.name} (${side}${x === null ? "" : `, ${x}x`}) (${stats})`,
+              { type: "fight", move: i, target: bi },
+              { move: m, target: bi, target_name: t.name, target_side: side, target_effectiveness: x },
+            ),
+          );
+        }
+        return;
+      }
       const eff = m.effectiveness ? Object.entries(m.effectiveness).map(([n, x]) => `${x}x vs ${n}`).join(", ") : "";
+      const hits =
+        mt?.multiple && targets.length > 1 ? `, hits ${targets.map(bi => field[bi].name).join(" and ")}` : "";
       options.push(
-        opt(
-          `move:${i}`,
-          `Use ${m.name} (${m.type} ${m.category}, pow ${m.power}, acc ${m.accuracy}, PP ${m.pp ?? "-"}/${m.max_pp ?? "-"}${eff ? `, ${eff}` : ""})`,
-          { type: "fight", move: i },
-          { move: m },
-        ),
+        opt(`move:${i}`, `Use ${m.name} (${stats}${eff ? `, ${eff}` : ""}${hits})`, { type: "fight", move: i }, { move: m }),
       );
     });
     const party = s.getPlayerParty();
@@ -481,6 +503,11 @@
     const h = handler();
     const field = s.getField();
     const targets = h.targets ?? [];
+    const planned = BOT.pendingMoveTarget;
+    if (planned && !planned.used && targets.includes(planned.target)) {
+      // The command decision already picked the target.
+      return { kind: "auto", act: { type: "target", target: planned.target } };
+    }
     return {
       kind: "target",
       prompt: "Choose a target for the move.",
@@ -902,6 +929,7 @@
         optionSelect(act.index);
         return;
       case "fight":
+        BOT.pendingMoveTarget = act.target === undefined ? null : { target: act.target };
         await ui.setMode(UiMode.FIGHT, phase.getFieldIndex());
         phase.handleCommand(Command.FIGHT, act.move);
         return;
@@ -930,6 +958,9 @@
         return;
       }
       case "target":
+        if (BOT.pendingMoveTarget) {
+          BOT.pendingMoveTarget.used = true;
+        }
         handler().targetSelectCallback([act.target]);
         return;
       case "party_slot":

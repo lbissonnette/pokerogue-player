@@ -189,3 +189,17 @@ async def test_rule_modifier_combined_revive_and_potion_targets():
     state = _party_state(("A", 30), ("B", 80), ("C", 50))
     d = {"kind": "modifier", "state": state, "options": opts[:2] + opts[3:]}
     assert (await RulePolicy().choose(d)).option_id == "reward:0@slot:0"
+
+
+async def test_rule_command_with_targets_picks_best_enemy_never_ally():
+    tb = {"name": "Thunderbolt", "type": "ELECTRIC", "category": "SPECIAL", "power": 90, "accuracy": 100}
+    opts = [
+        {"id": "move:0@target:1", "label": "on ally", "move": tb, "target": 1, "target_name": "Pal",
+         "target_side": "ally", "target_effectiveness": 4},
+        {"id": "move:0@target:2", "label": "on A", "move": tb, "target": 2, "target_name": "A",
+         "target_side": "enemy", "target_effectiveness": 0.5},
+        {"id": "move:0@target:3", "label": "on B", "move": tb, "target": 3, "target_name": "B",
+         "target_side": "enemy", "target_effectiveness": 2},
+    ]
+    d = {"kind": "command", "acting": "Pika", "state": {"party": []}, "options": opts}
+    assert (await RulePolicy().choose(d)).option_id == "move:0@target:3"

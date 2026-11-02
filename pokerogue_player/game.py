@@ -18,6 +18,31 @@ BRIDGE_JS = Path(__file__).with_name("bridge.js")
 # the production bundle. If the Object.prototype trap in bridge.js ever stops working
 # (e.g. a Phaser change), this exposes the scene by patching that one function.
 _INIT_SCENE_RE = re.compile(r"function initGlobalScene\s*\(\s*([\w$]+)\s*\)\s*\{")
+# `getMoveTargets(user, moveId)` is a module function (not on any object), and it's what the
+# game uses to decide whether a move needs the target screen. Expose it so the bridge can
+# offer "move on target" options. Function declarations are hoisted, so assigning just
+# before the declaration is safe. Only patch at statement boundaries.
+_MOVE_TARGETS_RE = re.compile(r"(^|[;{}\n])(\s*)function getMoveTargets\s*\(")
+
+
+def patch_bundle_text(body: str) -> tuple[str, list[str]]:
+    """Apply the bridge hooks to one JS file. Returns the new text and the hooks applied."""
+    applied = []
+    if "initGlobalScene" in body:
+        body, n = _INIT_SCENE_RE.subn(
+            lambda m: f"function initGlobalScene({m.group(1)}){{window.__prScene={m.group(1)};", body
+        )
+        if n:
+            applied.append("initGlobalScene")
+    if "getMoveTargets" in body:
+        body, n = _MOVE_TARGETS_RE.subn(
+            lambda m: f"{m.group(1)}{m.group(2)}window.__prGetMoveTargets=getMoveTargets;function getMoveTargets(",
+            body,
+            count=1,
+        )
+        if n:
+            applied.append("getMoveTargets")
+    return body, applied
 
 
 class Game:
@@ -56,13 +81,9 @@ class Game:
         try:
             response = await route.fetch()
             body = await response.text()
-            if "initGlobalScene" not in body:
-                await route.fulfill(response=response, body=body)
-                return
-            patched, n = _INIT_SCENE_RE.subn(
-                lambda m: f"function initGlobalScene({m.group(1)}){{window.__prScene={m.group(1)};", body
-            )
-            log.info("found game bundle %s (initGlobalScene patched: %s)", route.request.url.rsplit("/", 1)[-1], bool(n))
+            patched, applied = patch_bundle_text(body)
+            if applied:
+                log.info("patched %s: %s", route.request.url.rsplit("/", 1)[-1], ", ".join(applied))
             await route.fulfill(response=response, body=patched)
         except Exception:  # never block the game from loading
             log.exception("bundle patch failed; continuing unpatched")
