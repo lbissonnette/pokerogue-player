@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections import deque
 from dataclasses import dataclass
 from typing import Protocol
@@ -38,6 +39,17 @@ class RunMemory:
         self.history.append(f"wave {wave} {decision.get('kind')}: {label}")
         if choice.note:
             self.notes.append(choice.note.strip()[:200])
+
+
+_REVIVE = re.compile(r"revive|sacred ash", re.I)
+_HEAL = re.compile(r"potion|restore|heal|berry juice|full heal|elixir|ether|status", re.I)
+
+
+def _item_name(label: str) -> str:
+    """'Take reward: Revive - desc' / 'Buy Max Revive for 3000 - desc' -> item name."""
+    name = label.split(" - ", 1)[0]
+    name = re.sub(r"^(Take reward: |Buy )", "", name)
+    return re.sub(r" for \d+$", "", name)
 
 
 def _move_score(move: dict, attacker_types: list[str]) -> float:
@@ -88,10 +100,25 @@ class RulePolicy:
 
     def _party(self, options, decision, state):
         party = {f"slot:{p['slot']}": p for p in state.get("party", [])}
-        alive = [o for o in options if o["id"] in party and not party[o["id"]].get("fainted")]
+        members = [o for o in options if o["id"] in party]
+
+        def frac(o):
+            p = party[o["id"]]
+            return p["hp"] / max(1, p["max_hp"])
+
+        alive = [o for o in members if not party[o["id"]].get("fainted")]
+        item = decision.get("item") or ""
+        if item and _REVIVE.search(item):
+            fainted = [o for o in members if party[o["id"]].get("fainted")]
+            if fainted:
+                return Choice(fainted[0]["id"], f"{item} on a fainted party member")
+        if item and _HEAL.search(item) and alive:
+            hurt = [o for o in alive if frac(o) < 1] or alive
+            worst = min(hurt, key=frac)
+            return Choice(worst["id"], f"{item} on the least healthy alive party member")
         if not alive:
             return None
-        best = max(alive, key=lambda o: party[o["id"]]["hp"] / max(1, party[o["id"]]["max_hp"]))
+        best = max(alive, key=frac)
         return Choice(best["id"], "healthiest available party member")
 
     def _target(self, options, decision, state):
@@ -117,6 +144,16 @@ class RulePolicy:
         return Choice(options[-1]["id"], "safest default: last option (usually leave)")
 
     def _modifier(self, options, decision, state):
+        fainted = [p for p in state.get("party", []) if p.get("fainted")]
+        if fainted:
+            # Someone is down: a revive beats anything else on offer. Free reward first, then the shop.
+            for prefix in ("reward:", "shop:"):
+                revive = next(
+                    (o for o in options if o["id"].startswith(prefix) and _REVIVE.search(_item_name(o["label"]))),
+                    None,
+                )
+                if revive:
+                    return Choice(revive["id"], f"revive for fainted {fainted[0].get('name', 'party member')}")
         reward = next((o for o in options if o["id"].startswith("reward:")), None)
         return Choice(reward["id"], "take the first reward") if reward else None
 

@@ -531,9 +531,13 @@
     if (safe(() => h.allowCancel(), false)) {
       options.push(opt("cancel", "Cancel / don't use on anyone", { type: "cancel" }));
     }
+    const item = phase === "SelectModifierPhase" ? (BOT.pendingItem ?? null) : null;
     return {
       kind: "party",
-      prompt:
+      item,
+      prompt: item
+        ? `Choose which party member gets ${item}.`
+        :
         phase === "SwitchPhase"
           ? "Choose a Pokemon to send out."
           : `Choose a party member (${phase}). Context: ${BOT.log.slice(-3).join(" / ")}`,
@@ -553,6 +557,7 @@
           type: "modifier",
           row: 1,
           col: i,
+          item: t.name,
         }),
       );
     });
@@ -568,6 +573,7 @@
               type: "modifier",
               row: rowCursor,
               col: c,
+              item: t.name,
             }),
           );
         }
@@ -901,6 +907,7 @@
         press(Button.CANCEL);
         return;
       case "modifier": {
+        BOT.pendingItem = act.item ?? null;
         const h = handler();
         const cb = h.onActionInput;
         if (!cb) {

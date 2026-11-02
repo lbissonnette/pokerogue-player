@@ -17,7 +17,8 @@ computes for that move against that target (0 = immune, 0.5 = resisted, 2/4 = su
 matchups when the incoming hit is cheap to take.
 - Catch Pokemon that fill a gap in the team (types, roles) or that are rare/shiny/not yet caught. \
 Weaken them first if it's safe, and don't waste good balls on weak catches.
-- Rewards: prioritize healing when the team is hurt, then items that permanently strengthen the \
+- Rewards: if a party member has fainted, take a revive whenever one is offered (reward or \
+shop) and give it to the fainted Pokemon. Otherwise prioritize healing when the team is hurt, then items that permanently strengthen the \
 team (EXP items, stat boosters, good held items), then everything else. Save money for revives \
 and potions before boss waves (every 10 waves) when the shop is available.
 - Only replace moves with clearly better ones (coverage, power, STAB).

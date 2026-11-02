@@ -121,3 +121,56 @@ async def test_rule_command_without_moves_does_not_default_to_switch():
     d = {"kind": "command", "acting": "A", "state": {}, "options": [
         {"id": "switch:1", "label": "Switch"}, {"id": "ball:0", "label": "Ball"}, {"id": "run", "label": "Run"}]}
     assert (await RulePolicy().choose(d)).option_id == "ball:0"
+
+
+def _party_state(*members):
+    return {
+        "party": [
+            {"slot": i, "name": n, "hp": hp, "max_hp": 100, "fainted": hp == 0}
+            for i, (n, hp) in enumerate(members)
+        ]
+    }
+
+
+def _party_options(n):
+    return [{"id": f"slot:{i}", "label": f"slot {i}"} for i in range(n)]
+
+
+async def test_rule_potion_goes_to_least_healthy_alive():
+    state = _party_state(("A", 100), ("B", 40), ("C", 0), ("D", 70))
+    d = {"kind": "party", "item": "Super Potion", "state": state, "options": _party_options(4)}
+    assert (await RulePolicy().choose(d)).option_id == "slot:1"
+
+
+async def test_rule_revive_goes_to_fainted():
+    state = _party_state(("A", 100), ("B", 40), ("C", 0))
+    d = {"kind": "party", "item": "Max Revive", "state": state, "options": _party_options(3)}
+    assert (await RulePolicy().choose(d)).option_id == "slot:2"
+
+
+async def test_rule_faint_switch_without_item_still_healthiest():
+    state = _party_state(("A", 0), ("B", 40), ("C", 90))
+    d = {"kind": "party", "state": state, "options": _party_options(3)}
+    assert (await RulePolicy().choose(d)).option_id == "slot:2"
+
+
+def _modifier_options():
+    return [
+        {"id": "reward:0", "label": "Take reward: Rare Candy - Raises level"},
+        {"id": "reward:1", "label": "Take reward: Revive - Revives one Pokemon"},
+        {"id": "shop:0:0", "label": "Buy Max Revive for 3000 - Revives one Pokemon"},
+        {"id": "skip", "label": "Skip taking a reward"},
+    ]
+
+
+async def test_rule_modifier_prefers_revive_when_someone_fainted():
+    d = {"kind": "modifier", "state": _party_state(("A", 50), ("B", 0)), "options": _modifier_options()}
+    assert (await RulePolicy().choose(d)).option_id == "reward:1"
+    opts = [o for o in _modifier_options() if o["id"] != "reward:1"]
+    d = {"kind": "modifier", "state": _party_state(("A", 50), ("B", 0)), "options": opts}
+    assert (await RulePolicy().choose(d)).option_id == "shop:0:0"
+
+
+async def test_rule_modifier_ignores_revive_when_nobody_fainted():
+    d = {"kind": "modifier", "state": _party_state(("A", 50), ("B", 30)), "options": _modifier_options()}
+    assert (await RulePolicy().choose(d)).option_id == "reward:0"
