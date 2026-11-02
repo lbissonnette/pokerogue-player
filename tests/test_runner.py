@@ -60,13 +60,20 @@ async def test_title_new_game_then_stop_when_back_at_title(tmp_path):
         {"id": "opt:0", "label": "Continue"}, {"id": "opt:1", "label": "New Game"}]}
     modes = {"kind": "menu", "phase": "TitlePhase", "options": [
         {"id": "opt:0", "label": "Classic"}, {"id": "opt:1", "label": "Daily Run"}]}
-    runner, game = make_runner(tmp_path, [dict(title, seq=1), dict(modes, seq=2), dict(title, seq=9)])
+    title = dict(title, handler="TitleUiHandler")
+    empty_menu = {"kind": "menu", "phase": "TitlePhase", "seq": 3, "options": []}
+    later = [dict(title, seq=10 + i) for i in range(5)]
+    runner, game = make_runner(tmp_path, [dict(title, seq=1), dict(modes, seq=2), empty_menu, *later])
     runner.config.title_choice = "new"
     await runner.step()
     await runner.step()
+    await runner.step()  # empty transitional menu: ignored, not a crash
     assert game.acts == [(1, "opt:1"), (2, "opt:0")]
+    for _ in range(4):
+        await runner.step()  # title must persist before we call the run over
     with pytest.raises(StopRun):
         await runner.step()
+    assert game.acts == [(1, "opt:1"), (2, "opt:0")]
 
 
 async def test_save_slot_never_overwrites_by_default(tmp_path):

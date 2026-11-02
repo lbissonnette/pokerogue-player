@@ -50,6 +50,7 @@ class Runner:
         self._last_progress = time.monotonic()
         self._last_signature = None
         self._started_run = False
+        self._title_seen = 0
         self._login_warned = False
 
     def close(self) -> None:
@@ -99,8 +100,11 @@ class Runner:
             await self._save_slot(d)
             return
         if kind == "title" or (kind == "menu" and d.get("phase") == "TitlePhase"):
+            if not d.get("options"):
+                return  # menu is mid-transition (e.g. right after saving); look again next poll
             await self._title(d)
             return
+        self._title_seen = 0
 
         options = [o for o in (d.get("options") or []) if not DANGEROUS_LABEL.search(o.get("label", ""))]
         d["options"] = options
@@ -142,8 +146,15 @@ class Runner:
 
     async def _title(self, d: dict) -> None:
         options = d.get("options") or []
-        if self._started_run and d.get("phase") == "TitlePhase" and d.get("kind") == "title":
-            raise StopRun("back at the title screen (run over)")
+        if self._started_run and d.get("kind") == "title" and d.get("handler") == "TitleUiHandler":
+            # Back at the real title screen after our run: the run is over. Require it on a
+            # few consecutive polls so a screen flashing by during a transition doesn't count.
+            self._title_seen += 1
+            if self._title_seen >= 5:
+                raise StopRun("back at the title screen (run over)")
+            return
+        if self._started_run:
+            return  # a TitlePhase menu after we've started is a transition; never re-pick
         if self.config.title_choice == "continue":
             # Never the title's "Continue": it resumes whichever slot was played last, which
             # may be one of your own runs. "Load Game" lets us pick the bot's recorded slot.
