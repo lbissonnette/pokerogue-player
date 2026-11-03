@@ -271,12 +271,22 @@
     );
   }
 
-  function playerPokemon(p, i, enemies) {
-    return {
+  // Compact move info for the state: what the move is, without per-target numbers (those
+  // are in the option labels where they matter). `withEffect` adds the effect text.
+  function moveBrief(p, pm, withEffect) {
+    const m = moveInfo(p, pm, null);
+    const out = { name: m.name, type: m.type, category: m.category, power: m.power, accuracy: m.accuracy, pp: m.pp, max_pp: m.max_pp };
+    if (withEffect && m.effect) {
+      out.effect = m.effect;
+    }
+    return out;
+  }
+
+  function playerPokemon(p, i, inBattle) {
+    const onField = safe(() => p.isOnField(), false);
+    const out = {
       slot: i,
-      id: p.id,
       name: p.name,
-      species_id: safe(() => p.species.speciesId),
       bst: safe(() => p.species.baseTotal),
       level: p.level,
       types: safe(() => p.getTypes().map(typeName), []),
@@ -287,11 +297,16 @@
       max_hp: p.getMaxHp(),
       status: STATUS[safe(() => p.status?.effect, 0)] ?? "NONE",
       fainted: p.isFainted(),
-      on_field: safe(() => p.isOnField(), false),
-      stat_stages: safe(() => (p.isOnField() ? statStages(p) : {}), {}),
       held_items: heldItems(p),
-      moves: p.getMoveset().filter(Boolean).map(pm => moveInfo(p, pm, enemies)),
+      moves: p.getMoveset().filter(Boolean).map(pm => moveBrief(p, pm, inBattle && onField)),
     };
+    if (inBattle) {
+      out.on_field = onField;
+      if (onField) {
+        out.stat_stages = safe(() => statStages(p), {});
+      }
+    }
+    return out;
   }
 
   function enemyPokemon(e, players, revealAll) {
@@ -304,7 +319,6 @@
       .map(pm => moveInfo(e, pm, players));
     const out = {
       name: e.name,
-      species_id: safe(() => e.species.speciesId),
       bst: safe(() => e.species.baseTotal),
       level: e.level,
       types: safe(() => e.getTypes().map(typeName), []),
@@ -325,22 +339,31 @@
     return out;
   }
 
-  function snapshot(opts = {}) {
+  // Decision kinds that are about the fight in front of us. Everything else (rewards, move
+  // learning, a full party after a catch, events, biome) gets the team and the run, not the
+  // battlefield or the battle log.
+  const BATTLE_KINDS = new Set(["command", "target"]);
+  const BALL_KINDS = new Set(["command", "modifier"]);
+  const LOG_LINES = { command: 6, target: 6, party: 6, confirm: 3, menu: 3 };
+
+  function snapshot(opts = {}, d = {}) {
     const s = scene();
     const battle = s.currentBattle;
-    const enemiesOnField = safe(() => s.getEnemyField().filter(e => e.isActive(true)), []);
+    const kind = d.kind;
+    // A party screen during battle (send-out after a faint) is a battle decision; the same
+    // screen while handing out a reward item is not.
+    const inBattle = BATTLE_KINDS.has(kind) || (kind === "party" && !d.item);
     const party = s.getPlayerParty();
-    const playersOnField = party.filter(p => safe(() => p.isActive(true), false));
-    const balls = {};
-    BALLS.forEach((b, i) => {
-      balls[b] = safe(() => s.pokeballCounts[i], 0);
-    });
-    return {
+    const out = {
       wave: safe(() => battle.waveIndex),
       biome: safe(() => BIOMES[s.arena.biomeId] ?? s.arena.biomeId),
       money: s.money,
-      game_mode: safe(() => s.gameMode.getName()),
-      battle: battle
+      party: party.map((p, i) => playerPokemon(p, i, inBattle)),
+    };
+    if (inBattle) {
+      const enemiesOnField = safe(() => s.getEnemyField().filter(e => e.isActive(true)), []);
+      const playersOnField = party.filter(p => safe(() => p.isActive(true), false));
+      out.battle = battle
         ? {
             type: BATTLE_TYPE[battle.battleType] ?? battle.battleType,
             double: !!battle.double,
@@ -348,16 +371,25 @@
             trainer: safe(() => battle.trainer?.getName(0, true)),
             enemies_remaining: safe(() => battle.enemyParty.filter(e => !e.isFainted()).length),
           }
-        : null,
-      field: {
+        : null;
+      out.field = {
         weather: WEATHER[safe(() => s.arena.weather?.weatherType, 0)] ?? "NONE",
         terrain: TERRAIN[safe(() => s.arena.terrain?.terrainType, 0)] ?? "NONE",
-      },
-      party: party.map((p, i) => playerPokemon(p, i, enemiesOnField)),
-      enemies: enemiesOnField.map(e => enemyPokemon(e, playersOnField, !!opts.revealHidden)),
-      pokeballs: balls,
-      recent_log: BOT.log.slice(-12),
-    };
+      };
+      out.enemies = enemiesOnField.map(e => enemyPokemon(e, playersOnField, !!opts.revealHidden));
+    }
+    if (BALL_KINDS.has(kind)) {
+      const balls = {};
+      BALLS.forEach((b, i) => {
+        balls[b] = safe(() => s.pokeballCounts[i], 0);
+      });
+      out.pokeballs = balls;
+    }
+    const lines = LOG_LINES[kind] ?? 0;
+    if (lines) {
+      out.recent_log = BOT.log.slice(-lines);
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -1059,13 +1091,7 @@
       d.phase = phaseName();
       const needsState = !["loading", "busy", "wait", "advance", "auto", "login_required"].includes(d.kind);
       if (needsState && scene()?.currentBattle) {
-        d.state = snapshot(opts);
-        if (d.kind === "catch_full") {
-          // The caught Pokemon is described in the prompt; the battle field (where it still
-          // shows as the enemy) only confuses the comparison.
-          delete d.state.enemies;
-          delete d.state.battle;
-        }
+        d.state = snapshot(opts, d);
       }
       BOT.lastDecision = d;
       return JSON.parse(
@@ -1079,7 +1105,7 @@
 
   BOT.advance = () => press(Button.ACTION);
   BOT.cancel = () => press(Button.CANCEL);
-  BOT.snapshot = opts => snapshot(opts);
+  BOT.snapshot = (opts, kind = "command") => snapshot(opts, { kind });
 
   // ---------------------------------------------------------------------------
   // Executing actions

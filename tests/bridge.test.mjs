@@ -172,6 +172,31 @@ test("command decision lists usable moves, switches, balls and run with state", 
   assert.equal(d.state.enemies[0].known_moves.length, 0, "unrevealed enemy moves are hidden");
   assert.equal(d.state.enemies[0].hp, undefined, "exact enemy HP hidden by default");
   assert.deepEqual(plain(d.state.party[0].stat_stages), { ATK: 1 });
+  // Lean state: no internal ids, no per-target numbers in the party's moves (they're in labels).
+  assert.equal(d.state.party[0].id, undefined);
+  assert.equal(d.state.party[0].species_id, undefined);
+  assert.equal(d.state.party[0].moves[0].effectiveness, undefined);
+  assert.equal(d.state.party[0].moves[0].effect, "May paralyze.", "on-field moves keep their effect text");
+  assert.equal(d.state.party[1].moves[0].effect, undefined);
+  assert.ok(d.state.pokeballs && Array.isArray(d.state.recent_log));
+});
+
+test("non-battle decisions get the team and the run, not the battlefield or the log", () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  class ModifierSelectUiHandler {
+    awaitingActionInput = true;
+    onActionInput = () => true;
+    options = [{ modifierTypeOption: { cost: 0, type: { name: "Rare Candy", getDescription: () => "" } } }];
+    shopOptionsRows = [];
+    rerollCost = -1;
+  }
+  scene.ui._handler = new ModifierSelectUiHandler();
+  scene._phase = { phaseName: "SelectModifierPhase" };
+  const st = ctx.__prBot.getDecision().state;
+  assert.deepEqual(Object.keys(st).sort(), ["biome", "money", "party", "pokeballs", "wave"]);
+  assert.equal(st.party[0].on_field, undefined);
 });
 
 test("revealHidden exposes enemy movesets and exact HP", () => {

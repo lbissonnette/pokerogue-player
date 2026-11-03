@@ -41,7 +41,7 @@ def option_label(decision: dict, option_id: str) -> str:
 class RunMemory:
     """Short-lived memory the LLM sees on each decision."""
 
-    def __init__(self, max_notes: int = 12, max_history: int = 8):
+    def __init__(self, max_notes: int = 5, max_history: int = 8):
         self.notes: deque[str] = deque(maxlen=max_notes)
         self.history: deque[str] = deque(maxlen=max_history)
 
