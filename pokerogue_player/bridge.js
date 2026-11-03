@@ -759,6 +759,82 @@
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // Upcoming waves (Classic). Shown only on the reward/shop screen, where it matters for
+  // what to buy and keep.
+  // ---------------------------------------------------------------------------
+  // Mirrors ClassicFixedBossWaves in PokeRogue. If the game exposes its fixed-battle table,
+  // its keys decide which waves are fixed; these names just label them.
+  const CLASSIC_FIXED = {
+    5: "trainer battle (Youngster)",
+    8: "RIVAL battle",
+    25: "RIVAL battle",
+    35: "evil team grunt battle",
+    55: "RIVAL battle",
+    62: "evil team grunt battle",
+    64: "evil team grunt battle",
+    66: "evil team ADMIN battle",
+    95: "RIVAL battle",
+    112: "evil team grunt battle",
+    114: "evil team ADMIN battle",
+    115: "evil team BOSS battle (hard)",
+    145: "RIVAL battle",
+    165: "evil team BOSS battle (hard)",
+    182: "ELITE FOUR battle (hard)",
+    184: "ELITE FOUR battle (hard)",
+    186: "ELITE FOUR battle (hard)",
+    188: "ELITE FOUR battle (hard)",
+    190: "CHAMPION battle (very hard)",
+    195: "RIVAL battle (final, hard)",
+    200: "FINAL BOSS (very hard)",
+  };
+
+  function waveKind(s, w, gymKnown) {
+    // The game's own fixed-battle table, if it's a plain {wave: config} object.
+    let fixed = safe(() => s.gameMode.battleConfig, null);
+    if (!fixed || typeof fixed !== "object" || !Object.keys(fixed).some(k => /^\d+$/.test(k))) {
+      fixed = null;
+    }
+    if (CLASSIC_FIXED[w] && (!fixed || fixed[w] || w === 200)) {
+      return CLASSIC_FIXED[w];
+    }
+    if (fixed?.[w]) {
+      return "special trainer battle";
+    }
+    if (w < 180 && w % 10 === 0) {
+      // Gym leaders are on 20+30k or 30+30k, depending on the run. A player only finds out
+      // which at wave 20, so the bot doesn't either.
+      const gymSlot = w % 30 === 20 || w % 30 === 0;
+      if (gymSlot && w >= 20) {
+        if (!gymKnown) {
+          return w === 20 || w === 30 ? "GYM LEADER battle if this run's gyms are on this wave (hard), else wild boss" : "wild boss or GYM LEADER (hard)";
+        }
+        const offset = !!safe(() => s.offsetGym, false);
+        if ((offset && w % 30 === 0) || (!offset && w % 30 === 20)) {
+          return "GYM LEADER battle (hard)";
+        }
+      }
+      return "wild boss";
+    }
+    return null;
+  }
+
+  function upcomingWaves(horizon = 15) {
+    const s = scene();
+    if (!/classic/i.test(safe(() => s.gameMode.getName(), ""))) {
+      return [];
+    }
+    const wave = safe(() => s.currentBattle.waveIndex, 0);
+    const out = [];
+    for (let w = wave + 1; w <= Math.min(200, wave + horizon); w++) {
+      const k = waveKind(s, w, wave >= 20);
+      if (k) {
+        out.push(`wave ${w} (in ${w - wave}): ${k}`);
+      }
+    }
+    return out;
+  }
+
   function modifierDecision() {
     const s = scene();
     const h = handler();
@@ -783,6 +859,7 @@
     if (reroll >= 0 && reroll <= s.money) {
       options.push(opt("reroll", `Reroll rewards for ${reroll}`, { type: "modifier", row: 0, col: 0 }));
     }
+    const ahead = safe(() => upcomingWaves(), []);
     // Free rewards are always worth taking, so "skip" is only offered when no reward can be
     // taken at all (e.g. every reward is an item that would have no effect on anyone).
     if (!options.some(o => o.id.startsWith("reward:"))) {
@@ -792,7 +869,8 @@
       kind: "modifier",
       prompt:
         `Choose a reward. Money: ${s.money}. Items used on a Pokemon are listed once per Pokemon ` +
-        "they would have an effect on; picking one also picks the target.",
+        "they would have an effect on; picking one also picks the target." +
+        (ahead.length ? `\nComing up: ${ahead.join("; ")}.` : ""),
       options,
     };
   }

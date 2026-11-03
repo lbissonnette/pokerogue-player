@@ -822,3 +822,34 @@ test("skip is only offered when no free reward can be taken", () => {
   scene._phase = { phaseName: "SelectModifierPhase" };
   assert.deepEqual(plain(ctx.__prBot.getDecision().options.map(o => o.id)), ["skip"]);
 });
+
+test("reward screen previews upcoming special waves; gym waves stay unknown until wave 20", () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  scene.gameMode.getName = () => "Classic";
+  class ModifierSelectUiHandler {
+    awaitingActionInput = true;
+    onActionInput = () => true;
+    options = [{ modifierTypeOption: { cost: 0, type: { name: "Rare Candy", getDescription: () => "" } } }];
+    shopOptionsRows = [];
+    rerollCost = -1;
+  }
+  scene.ui._handler = new ModifierSelectUiHandler();
+  scene._phase = { phaseName: "SelectModifierPhase" };
+  scene.offsetGym = true; // gyms on 30, 60, ...
+  scene.currentBattle.waveIndex = 7;
+  let p = ctx.__prBot.getDecision().prompt;
+  assert.match(p, /wave 8 \(in 1\): RIVAL battle/);
+  assert.match(p, /wave 10 \(in 3\): wild boss/);
+  assert.match(p, /wave 20 \(in 13\): GYM LEADER battle if this run's gyms are on this wave/);
+  scene.currentBattle.waveIndex = 20;
+  p = ctx.__prBot.getDecision().prompt;
+  assert.match(p, /wave 25 \(in 5\): RIVAL battle/);
+  assert.match(p, /wave 30 \(in 10\): GYM LEADER battle \(hard\)/);
+  assert.match(p, /wave 35 \(in 15\): evil team grunt battle/);
+  // The preview is only on the reward screen.
+  scene.ui._handler = new CommandUiHandler();
+  scene._phase = new CommandPhase(scene.getPlayerParty()[0]);
+  assert.doesNotMatch(JSON.stringify(ctx.__prBot.getDecision()), /Coming up/);
+});

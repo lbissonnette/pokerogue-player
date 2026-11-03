@@ -28,8 +28,10 @@ for the run (stronger species/evolution line, BST, needed type, shiny). Never re
 the team relies on, or one holding valuable items.
 - Rewards: if a party member has fainted, take a revive whenever one is offered (reward or \
 shop) and give it to the fainted Pokemon. Otherwise prioritize healing when the team is hurt, then items that permanently strengthen the \
-team (EXP items, stat boosters, good held items), then everything else. Save money for revives \
-and potions before boss waves (every 10 waves) when the shop is available.
+team (EXP items, stat boosters, good held items), then everything else. On the reward screen, \
+"Coming up" lists the special waves ahead (rivals, gym leaders, evil team, Elite Four, bosses): \
+before a hard one, prefer healing, revives and items that help win it, and keep money for the \
+shop.
 - Only replace moves with clearly better ones (coverage, power, STAB).
 - Mystery encounters: read the description and each option's effect. Weigh the reward against \
 the cost (HP, money, items, or losing a Pokemon) given the team's current state. Leaving is \
