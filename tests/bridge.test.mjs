@@ -227,7 +227,7 @@ test("modifier decision maps rewards, shop rows and reroll to callback coordinat
   assert.equal(d.kind, "modifier");
   assert.deepEqual(
     plain(d.options.map(o => o.id)),
-    ["reward:0", "reward:1", "shop:0:0", "shop:1:0", "reroll", "skip"], // Revive is unaffordable
+    ["reward:0", "reward:1", "shop:0:0", "shop:1:0", "reroll"], // Revive is unaffordable
   );
   await ctx.__prBot.act(d.seq, "shop:0:0");
   // The phase re-opens the menu with a fresh callback after a purchase.
@@ -576,7 +576,7 @@ test("targeted rewards become one option per valid target, and the plan answers 
   scene.ui._handler = new ModifierSelectUiHandler();
   scene._phase = { phaseName: "SelectModifierPhase" };
   let d = ctx.__prBot.getDecision();
-  assert.deepEqual(plain(d.options.map(o => o.id)), ["reward:0@slot:0", "reward:1", "shop:0:0@slot:2", "skip"]);
+  assert.deepEqual(plain(d.options.map(o => o.id)), ["reward:0@slot:0", "reward:1", "shop:0:0@slot:2"]);
   assert.match(d.options[2].label, /Buy Revive for 400 and use it on Popplio \(Lv10, fainted\)/);
   assert.equal(d.options[2].target, 2);
 
@@ -770,4 +770,26 @@ test("doubles: both Pokemon's commands in one decision; the partner's is applied
   assert.deepEqual(plain(phase2.calls), [[0, 0]]);
   // Plan is used once: the next look at this phase is a normal decision.
   assert.equal(ctx.__prBot.getDecision().kind, "command");
+});
+
+test("skip is only offered when no free reward can be taken", () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  class PokemonModifierType {}
+  class PokemonReviveModifierType extends PokemonModifierType {
+    name = "Revive";
+    getDescription = () => "";
+    selectFilter = () => "It won't have any effect.";
+  }
+  class ModifierSelectUiHandler {
+    awaitingActionInput = true;
+    onActionInput = () => true;
+    options = [{ modifierTypeOption: { cost: 0, type: new PokemonReviveModifierType() } }];
+    shopOptionsRows = [];
+    rerollCost = -1;
+  }
+  scene.ui._handler = new ModifierSelectUiHandler();
+  scene._phase = { phaseName: "SelectModifierPhase" };
+  assert.deepEqual(plain(ctx.__prBot.getDecision().options.map(o => o.id)), ["skip"]);
 });

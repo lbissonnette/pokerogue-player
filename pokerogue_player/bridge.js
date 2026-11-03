@@ -743,7 +743,11 @@
     if (reroll >= 0 && reroll <= s.money) {
       options.push(opt("reroll", `Reroll rewards for ${reroll}`, { type: "modifier", row: 0, col: 0 }));
     }
-    options.push(opt("skip", "Leave without taking a free reward (ends this reward screen; shop purchases are kept)", { type: "modifier", row: -1, col: -1 }));
+    // Free rewards are always worth taking, so "skip" is only offered when no reward can be
+    // taken at all (e.g. every reward is an item that would have no effect on anyone).
+    if (!options.some(o => o.id.startsWith("reward:"))) {
+      options.push(opt("skip", "Leave the reward screen (no reward can be used right now)", { type: "modifier", row: -1, col: -1 }));
+    }
     return {
       kind: "modifier",
       prompt:
