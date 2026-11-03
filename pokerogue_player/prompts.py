@@ -30,6 +30,10 @@ first when the chance is low and it's safe to do so.
 the switch-in clearly wins the matchup: use the "best move ... Nx" and "takes Nx" numbers in \
 the switch options (computed by the game), not your own type chart. Never switch back to a \
 Pokemon you just switched out of unless something changed.
+- Battle start ("keep X in" or "switch to Y"): switching here is free, so treat every option \
+equally and pick the Pokemon best suited to this enemy (type matchup numbers, HP, turn order, \
+and an under-level-cap Pokemon for easy wild battles). Keeping the current Pokemon is not a \
+safer default.
 - Catching (wild battles only; the command prompt shows "party N/6"). For every wild Pokemon, \
 decide: if the party has fewer than 6, catch it (weaken it first if safe). If the party is \
 full, catch it only if it's shiny, or its fully evolved form ("evolves into ..., BST N" in the \

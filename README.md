@@ -31,7 +31,7 @@ pokerogue-player login
 
 After that, a run is fully hands-off: the bot picks the starters, makes every decision and
 performs every input until the run ends. On startup it also switches this browser profile's
-game settings to bot-friendly values (5x speed, Battle Style "Set", tutorials and EXP/HP-bar
+game settings to bot-friendly values (5x speed, Battle Style "Switch", tutorials and EXP/HP-bar
 animations off) and reloads once. Pass `--no-auto-settings` to leave your settings alone.
 
 ## Usage
@@ -93,7 +93,7 @@ moves that have been used. `--reveal-hidden` gives it exact HP, natures and full
 | Biome choice and other yes/no or option menus | LLM |
 | Starting team (10-point budget, always includes a Pokérus starter when one is affordable, no two starters share a type, the whole budget is spent if anything still fits; rejected teams are retried with the reason) | LLM (best-stats fallback), or `--starters` |
 | Title screen, save slot | Fixed rules: new run in an empty slot, or `--continue` the bot's own run |
-| "Switch before the next trainer Pokémon?" | Turned off via Battle Style "Set" |
+| "Keep or switch?" at the start of each battle (Battle Style "Switch") | LLM, one decision: keep or switch to X |
 | Mystery encounters (description, each option and its effect; disabled options hidden) | LLM (fallback: last option, usually leave) |
 | Text, animations, evolutions | Auto-advance |
 

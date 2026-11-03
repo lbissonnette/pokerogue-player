@@ -15,7 +15,7 @@ DEFAULT_MODEL = "anthropic/claude-haiku-4.5"
 BOT_SETTINGS = {
     "general": {
         "gameSpeed": 5,  # GameSpeed.TURBO
-        "battleStyle": 1,  # BattleStyle.SET: no "switch Pokemon?" prompt before trainer sends
+        "battleStyle": 0,  # BattleStyle.SWITCH: "switch Pokemon?" at each battle start (bot decides)
         "enableTutorials": False,
         "expGainsSpeed": 3,  # ExpGainsSpeed.SKIP
         "hpBarSpeed": 3,  # HpBarSpeed.SKIP

@@ -939,3 +939,37 @@ test("attack options and the prompt show who moves first by Speed and priority",
   assert.match(d.prompt, /Trick Room: slowest first\): Pikachu/);
   assert.match(d.options.find(o => o.id === "move:0").label, /you move first \(before Gyarados\)/);
 });
+
+test("battle start offers keep or switch as equal choices, then sends out the pick", async () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  scene.getPlayerField = () => [scene.getPlayerParty()[0]];
+  const picked = [];
+  const mk = name => ({ label: name, handler: () => picked.push(name) || true });
+  class ConfirmUiHandler {
+    options = [mk("Yes"), mk("No")];
+    clear() {}
+  }
+  scene.ui._handler = new ConfirmUiHandler();
+  scene._phase = { phaseName: "CheckSwitchPhase", fieldIndex: 0 };
+  const d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "check_switch");
+  assert.deepEqual(plain(d.options.map(o => o.id)), ["keep", "switch:1"]);
+  assert.match(d.options[0].label, /^Keep Pikachu in \(Lv10, 50\/50 HP; ELECTRIC/);
+  assert.match(d.options[1].label, /^Switch to Squirtle/);
+  assert.match(d.prompt, /No option is a default/);
+  assert.ok(d.state.enemies, "battle state is included");
+  await ctx.__prBot.act(d.seq, "switch:1");
+  assert.deepEqual(picked, ["Yes"]);
+
+  class PartyUiHandler {
+    optionsMode = false;
+    partyUiMode = 0;
+  }
+  scene.ui._handler = new PartyUiHandler();
+  scene._phase = { phaseName: "SwitchPhase" };
+  const next = ctx.__prBot.getDecision();
+  assert.equal(next.kind, "auto");
+  assert.deepEqual(plain(next.act), { type: "party_slot", slot: 1, planned: true });
+});

@@ -344,9 +344,9 @@
   // Decision kinds that are about the fight in front of us. Everything else (rewards, move
   // learning, a full party after a catch, events, biome) gets the team and the run, not the
   // battlefield or the battle log.
-  const BATTLE_KINDS = new Set(["command", "target"]);
+  const BATTLE_KINDS = new Set(["command", "target", "check_switch"]);
   const BALL_KINDS = new Set(["command", "modifier"]);
-  const LOG_LINES = { command: 6, target: 6, party: 6, confirm: 3, menu: 3 };
+  const LOG_LINES = { command: 6, target: 6, check_switch: 6, party: 6, confirm: 3, menu: 3 };
 
   function snapshot(opts = {}, d = {}) {
     const s = scene();
@@ -887,6 +887,15 @@
       };
     }
     const mode = h.partyUiMode;
+    const sw = BOT.pendingSwitch;
+    BOT.pendingSwitch = null;
+    if (sw && phase === "SwitchPhase") {
+      const p = party[sw.slot];
+      if (p && !p.isFainted() && !p.isOnField()) {
+        // The "keep or switch?" decision already picked who comes in.
+        return { kind: "auto", act: { type: "party_slot", slot: sw.slot, planned: true } };
+      }
+    }
     if (BOT.releasePlan?.stage === "party" && phase === "AttemptCapturePhase" && party[BOT.releasePlan.slot]) {
       return { kind: "auto", act: { type: "release_slot", slot: BOT.releasePlan.slot } };
     }
@@ -927,6 +936,49 @@
           ? `Choose a Pokemon to send out against ${safe(() => s.getEnemyField().filter(e => e.isActive(true)).map(e => e.name).join(" and "), "the enemy")}.`
           : `Choose a party member (${phase}). Context: ${BOT.log.slice(-3).join(" / ")}`,
       party_mode: mode,
+      options,
+    };
+  }
+
+  /**
+   * Start of a battle with Battle Style "Switch": keep the Pokemon that's out, or bring in
+   * another one before the first turn (free: it doesn't use up a turn). Keeping and each
+   * switch are offered as equal choices, all with the same matchup summary.
+   */
+  function checkSwitchDecision(phase) {
+    const s = scene();
+    const fieldIndex = safe(() => phase.fieldIndex, 0) ?? 0;
+    const user = safe(() => s.getPlayerField()[fieldIndex], null);
+    const enemies = safe(() => s.getEnemyField().filter(e => e.isActive(true)), []);
+    const keepNo = { type: "option", index: 1 };
+    if (!user) {
+      return { kind: "auto", act: keepNo };
+    }
+    const options = [
+      opt(`keep`, `Keep ${user.name} in (Lv${user.level}, ${hpText(user)}${matchup(user, enemies)})`, keepNo),
+    ];
+    s.getPlayerParty().forEach((p, i) => {
+      if (!p.isOnField() && !p.isFainted() && safe(() => p.isAllowedInBattle(), true)) {
+        options.push(
+          opt(`switch:${i}`, `Switch to ${p.name} (Lv${p.level}, ${hpText(p)}${matchup(p, enemies)})`, {
+            type: "check_switch",
+            slot: i,
+          }),
+        );
+      }
+    });
+    if (options.length === 1) {
+      return { kind: "auto", act: keepNo };
+    }
+    const vs = enemies.map(e => `${e.name} (Lv${e.level})`).join(" and ") || "the next enemy";
+    const wild = s.currentBattle?.battleType === 0 ? " Wild battle." : "";
+    return {
+      kind: "check_switch",
+      prompt:
+        `A battle against ${vs} is starting.${wild} Choose who fights it: keep ${user.name} in or ` +
+        "switch now. Switching here is free (it doesn't use a turn and nobody takes a hit). " +
+        "No option is a default; pick the Pokemon with the best matchup, HP and level-cap situation.",
+      acting: user.name,
       options,
     };
   }
@@ -1306,8 +1358,8 @@
           return { kind: "auto", act: { type: "plan_confirm" } };
         }
         if (pn === "CheckSwitchPhase") {
-          // "Will you switch Pokemon?" before a trainer's next Pokemon. Slice 1: never.
-          return { kind: "auto", act: { type: "option", index: 1 } };
+          // "Will you switch Pokemon?" at the start of a battle (Battle Style "Switch").
+          return checkSwitchDecision(phase);
         }
         if (pn === "SelectStarterPhase") {
           return { kind: "auto", act: { type: "option", index: 0 } };
@@ -1473,6 +1525,11 @@
             h.processInput(Button.ACTION);
           }
         }
+        return;
+      case "check_switch":
+        // "Yes" to "Will you switch?"; the party screen then sends out the planned slot.
+        BOT.pendingSwitch = { slot: act.slot };
+        optionSelect(0);
         return;
       case "release_plan":
         BOT.releasePlan = { slot: act.slot, stage: "party" };
