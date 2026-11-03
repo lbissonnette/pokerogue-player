@@ -29,6 +29,8 @@ _MOVE_TARGETS_RE = re.compile(r"(^|[;{}\n])(\s*)function getMoveTargets\s*\(")
 # are module constants. Expose them by chaining an assignment onto their declarations.
 _EVOLUTIONS_RE = re.compile(r"\b(const|let|var)\s+pokemonEvolutions\s*=(?!=)")
 _ALL_SPECIES_RE = re.compile(r"\b(const|let|var)\s+allSpecies\s*=(?!=)")
+# Newer builds: species live in a registry set once at startup via setSpeciesDataRegistry(r).
+_SPECIES_REGISTRY_RE = re.compile(r"function setSpeciesDataRegistry\s*\(\s*([\w$]+)\s*\)\s*\{")
 
 
 def patch_bundle_text(body: str) -> tuple[str, list[str]]:
@@ -56,6 +58,14 @@ def patch_bundle_text(body: str) -> tuple[str, list[str]]:
         body, n = _ALL_SPECIES_RE.subn(lambda m: f"{m.group(1)} allSpecies=window.__prAllSpecies=", body, count=1)
         if n:
             applied.append("allSpecies")
+    if "setSpeciesDataRegistry" in body:
+        body, n = _SPECIES_REGISTRY_RE.subn(
+            lambda m: f"function setSpeciesDataRegistry({m.group(1)}){{window.__prSpeciesRegistry={m.group(1)};",
+            body,
+            count=1,
+        )
+        if n:
+            applied.append("speciesDataRegistry")
     return body, applied
 
 

@@ -26,6 +26,12 @@ Speed drops/paralysis on the enemy (or boosts on you) can flip the order.
 - Ball options include an estimated catch chance; weaken the target or inflict sleep/paralysis \
 first when the chance is low and it's safe to do so.
 - Preserve HP across waves; there is no free healing between most battles.
+- Biome types: "biome_types" lists the current biome's dominant types (share of its wild \
+Pokemon) and, for each, who on your team hits it super effectively, resists it, or is weak to \
+it. Most fights in this biome are against those types, and a gym leader fought in this biome \
+uses one of them. Value Pokemon that resist or hit those types: when choosing whom to revive, \
+heal or keep healthy, prefer the one that matches up well against the biome over one that is \
+weak to it. The biome changes every 10 waves, so this can shift.
 - Switching costs your turn and the incoming Pokemon takes the enemy's hit. Only switch when \
 the switch-in clearly wins the matchup: use the "best move ... Nx" and "takes Nx" numbers in \
 the switch options (computed by the game), not your own type chart. Never switch back to a \
@@ -40,7 +46,11 @@ full, catch it only if it's shiny, or its fully evolved form ("evolves into ...,
 ball option; its own BST if none is listed) has a clearly higher BST (roughly 50+) than the \
 fully evolved form of your \
 weakest party member, or replacing a party member with it would add type coverage the team \
-lacks. Otherwise just defeat it. Use the catch chance to pick the ball; save better balls \
+lacks. Ask specifically: does the team have answers for this biome's dominant types (someone \
+who hits each super effectively and someone who resists it)? If not, does this Pokemon fill that \
+gap? The ball option's "biome fit" says what it adds; "(team has nothing that does)" or \
+"(nobody on the team does)" marks a real gap, which is a strong reason to catch it. \
+Otherwise just defeat it. Use the catch chance to pick the ball; save better balls \
 for better targets.
 - Full party after a catch: release a party member only if the new Pokemon is clearly better \
 for the run by the same test: higher fully evolved BST than that member's fully evolved form, \
@@ -54,8 +64,15 @@ keeps up.
 many wild Pokemon you face, which is valuable: more EXP to reach the cap and to keep the rest of \
 the party (via EXP Share) viable. Take Lures when the team is under the cap or behind.
 - Rewards: if a party member has fainted, take a revive whenever one is offered (reward or \
-shop) and give it to the fainted Pokemon. Otherwise prioritize healing when the team is hurt, then items that permanently strengthen the \
-team (EXP items, stat boosters, good held items), then everything else. On the reward screen, \
+shop) and give it to the fainted Pokemon (the one that fits the biome best, if several). \
+Otherwise prefer items that permanently strengthen the team (EXP items, stat boosters, good held \
+items), then everything else.
+- Money and healing: money is scarce and runs are lost by running out of it. Do not keep the \
+team topped off. Heal (free reward or shop) only a Pokemon that is actually at risk in the \
+upcoming waves: low HP (roughly under half) and one you need, especially before a gym leader, \
+rival or boss in "Coming up". A Pokemon at 60%+ HP facing ordinary wild battles doesn't need \
+healing. Buying something should be the exception; leaving the shop with the free reward \
+alone and keeping the money is often right. On the reward screen, \
 "Coming up" lists the special waves ahead (rivals, gym leaders, evil team, Elite Four, bosses): \
 before a hard one, prefer healing, revives and items that help win it, and keep money for the \
 shop.

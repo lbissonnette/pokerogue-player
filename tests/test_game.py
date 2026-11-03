@@ -35,3 +35,10 @@ def test_patch_bundle_exposes_species_data():
     assert "const allSpecies=window.__prAllSpecies=[]" in out
     assert "const pokemonEvolutions=window.__prEvolutions={1:" in out
     assert "if(allSpecies==x)" in out
+
+
+def test_patch_bundle_exposes_species_registry():
+    body = "let r;function setSpeciesDataRegistry(e){r=e}"
+    out, applied = patch_bundle_text(body)
+    assert applied == ["speciesDataRegistry"]
+    assert "function setSpeciesDataRegistry(e){window.__prSpeciesRegistry=e;r=e}" in out

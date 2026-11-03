@@ -997,3 +997,44 @@ test("speed uses the game's effective Speed (new options-object signature) and h
   d = ctx.__prBot.getDecision();
   assert.match(d.prompt, /Pikachu \(Spe 60\) > enemy Gyarados \(Spe 50\)/);
 });
+
+test("biome types come from the arena pool; coverage and ball 'biome fit' use them", () => {
+  const ctx = loadBridge();
+  const { scene, enemy } = makeScene();
+  ctx.__prScene = scene;
+  ctx.__prAllSpecies = [];
+  ctx.__prAllSpecies[24] = { speciesId: 25, name: "Pikachu", type1: 12, type2: null };
+  ctx.__prAllSpecies[80] = { speciesId: 81, name: "Magnemite", type1: 12, type2: 8 };
+  ctx.__prAllSpecies[49] = { speciesId: 50, name: "Diglett", type1: 4, type2: null };
+  // Common: Pikachu, Magnemite; rare: Diglett (older tree format {level: [ids]}).
+  scene.arena.pokemonPool = { 0: [25, 81], 2: [{ 1: [50] }] };
+  enemy.getTypes = () => [4]; // a GROUND wild Pokemon
+  const d = ctx.__prBot.getDecision();
+  const bt = d.state.biome_types;
+  assert.equal(bt[0].type, "ELECTRIC");
+  assert.deepEqual(plain(bt.map(b => b.type)), ["ELECTRIC", "STEEL", "GROUND"]);
+  const elec = bt[0];
+  assert.deepEqual(plain(elec.resisted_by), ["Pikachu"]);
+  assert.deepEqual(plain(elec.weak), ["Squirtle"]);
+  assert.deepEqual(plain(elec.hit_super_effectively_by), []);
+  const ball = d.options.find(o => o.id === "ball:0");
+  assert.match(ball.label, /its STAB hits ELECTRIC super effectively \(team has nothing that does\)/);
+  assert.match(ball.label, /resists ELECTRIC/);
+});
+
+test("species lookups use the newer species registry when present", () => {
+  const ctx = loadBridge();
+  const { scene, enemy } = makeScene();
+  ctx.__prScene = scene;
+  enemy.species = { speciesId: 129, baseTotal: 200 };
+  const species = { 129: { speciesId: 129, name: "Magikarp", baseTotal: 200, type1: 10, type2: null },
+                    130: { speciesId: 130, name: "Gyarados", baseTotal: 540, type1: 10, type2: 2 } };
+  ctx.__prSpeciesRegistry = {
+    getSpecies: id => species[id],
+    getEvolutions: id => (id === 129 ? [{ speciesId: 130 }] : []),
+  };
+  scene.arena.pokemonPool = { 0: [129] };
+  const d = ctx.__prBot.getDecision();
+  assert.match(d.options.find(o => o.id === "ball:0").label, /evolves into Gyarados \(WATER\/FLYING, BST 540\)/);
+  assert.equal(d.state.biome_types[0].type, "WATER");
+});

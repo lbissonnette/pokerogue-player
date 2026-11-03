@@ -341,11 +341,160 @@
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // Biome types: which types the current biome's wild pool is made of (from the arena's
+  // own spawn pool, weighted by rarity tier), and how the team lines up against them.
+  // ---------------------------------------------------------------------------
+  // Standard type chart: attacking type -> [super effective vs, not very effective vs, no effect vs].
+  const CHART = {
+    NORMAL: [[], ["ROCK", "STEEL"], ["GHOST"]],
+    FIGHTING: [["NORMAL", "ROCK", "STEEL", "ICE", "DARK"], ["FLYING", "POISON", "BUG", "PSYCHIC", "FAIRY"], ["GHOST"]],
+    FLYING: [["FIGHTING", "BUG", "GRASS"], ["ROCK", "STEEL", "ELECTRIC"], []],
+    POISON: [["GRASS", "FAIRY"], ["POISON", "GROUND", "ROCK", "GHOST"], ["STEEL"]],
+    GROUND: [["POISON", "ROCK", "STEEL", "FIRE", "ELECTRIC"], ["BUG", "GRASS"], ["FLYING"]],
+    ROCK: [["FLYING", "BUG", "FIRE", "ICE"], ["FIGHTING", "GROUND", "STEEL"], []],
+    BUG: [["GRASS", "PSYCHIC", "DARK"], ["FIGHTING", "FLYING", "POISON", "GHOST", "STEEL", "FIRE", "FAIRY"], []],
+    GHOST: [["GHOST", "PSYCHIC"], ["DARK"], ["NORMAL"]],
+    STEEL: [["ROCK", "ICE", "FAIRY"], ["STEEL", "FIRE", "WATER", "ELECTRIC"], []],
+    FIRE: [["BUG", "STEEL", "GRASS", "ICE"], ["ROCK", "FIRE", "WATER", "DRAGON"], []],
+    WATER: [["GROUND", "ROCK", "FIRE"], ["WATER", "GRASS", "DRAGON"], []],
+    GRASS: [["GROUND", "ROCK", "WATER"], ["FLYING", "POISON", "BUG", "STEEL", "FIRE", "GRASS", "DRAGON"], []],
+    ELECTRIC: [["FLYING", "WATER"], ["GRASS", "ELECTRIC", "DRAGON"], ["GROUND"]],
+    PSYCHIC: [["FIGHTING", "POISON"], ["STEEL", "PSYCHIC"], ["DARK"]],
+    ICE: [["FLYING", "GROUND", "GRASS", "DRAGON"], ["STEEL", "FIRE", "WATER", "ICE"], []],
+    DRAGON: [["DRAGON"], ["STEEL"], ["FAIRY"]],
+    DARK: [["GHOST", "PSYCHIC"], ["FIGHTING", "DARK", "FAIRY"], []],
+    FAIRY: [["FIGHTING", "DRAGON", "DARK"], ["POISON", "STEEL", "FIRE"], []],
+  };
+
+  function typeMult(atk, defTypes) {
+    const row = CHART[atk];
+    if (!row) {
+      return 1;
+    }
+    return defTypes.reduce((m, d) => m * (row[0].includes(d) ? 2 : row[1].includes(d) ? 0.5 : row[2].includes(d) ? 0 : 1), 1);
+  }
+
+  // Rarity tiers COMMON, UNCOMMON, RARE, SUPER_RARE, ULTRA_RARE, BOSS, BOSS_RARE, ...
+  const TIER_WEIGHT = [6, 4, 2, 1, 1, 2, 1, 1, 1];
+
+  function poolIds(entry, out) {
+    if (typeof entry === "number") {
+      out.push(entry);
+    } else if (Array.isArray(entry)) {
+      entry.forEach(e => poolIds(e, out));
+    } else if (entry && typeof entry === "object") {
+      Object.values(entry).forEach(e => poolIds(e, out));
+    }
+    return out;
+  }
+
+  function speciesTypes(id) {
+    const sp = speciesById(id);
+    if (!sp) {
+      return null;
+    }
+    return [sp.type1, sp.type2].filter(t => t !== null && t !== undefined && t !== -1).map(typeName);
+  }
+
+  /** [{type, share}] for the top types of the current biome's wild pool, or [] if unknown. */
+  function biomeTypes() {
+    const s = scene();
+    const pool = safe(() => s.arena.pokemonPool, null);
+    if (!pool || typeof pool !== "object") {
+      return [];
+    }
+    const weight = {};
+    let total = 0;
+    for (const [tier, entries] of Object.entries(pool)) {
+      const w = TIER_WEIGHT[Number(tier)] ?? 1;
+      for (const id of new Set(poolIds(entries, []))) {
+        const types = speciesTypes(id);
+        if (!types?.length) {
+          continue;
+        }
+        for (const t of types) {
+          weight[t] = (weight[t] ?? 0) + w / types.length;
+        }
+        total += w;
+      }
+    }
+    if (!total) {
+      return [];
+    }
+    return Object.entries(weight)
+      .map(([type, w]) => ({ type, share: w / total }))
+      .sort((a, b) => b.share - a.share)
+      .filter((x, i) => i < 3 && x.share >= 0.08);
+  }
+
+  function attackTypes(p) {
+    const out = new Set();
+    for (const pm of safe(() => p.getMoveset().filter(Boolean), [])) {
+      const move = safe(() => pm.getMove());
+      if (move && move.category !== 2 && move.power > 0) {
+        out.add(typeName(safe(() => p.getMoveType(move), move.type)));
+      }
+    }
+    return out;
+  }
+
+  /** Per dominant biome type: who in the party hits it super effectively, resists it, or is weak to it. */
+  function biomeCoverage(dominant, party) {
+    return dominant.map(({ type, share }) => {
+      const hits = [];
+      const resists = [];
+      const weak = [];
+      for (const p of party) {
+        const name = safe(() => p.isFainted(), false) ? `${p.name} (fainted)` : p.name;
+        const own = safe(() => p.getTypes().map(typeName), []);
+        if ([...attackTypes(p)].some(a => typeMult(a, [type]) > 1)) {
+          hits.push(name);
+        }
+        const taken = typeMult(type, own);
+        if (taken < 1) {
+          resists.push(name);
+        } else if (taken > 1) {
+          weak.push(name);
+        }
+      }
+      return {
+        type,
+        share: `${Math.round(share * 100)}%`,
+        hit_super_effectively_by: hits,
+        resisted_by: resists,
+        weak: weak,
+      };
+    });
+  }
+
+  /** Ball-option note: what this wild Pokemon would add against the biome's dominant types. */
+  function biomeFitText(e, coverage) {
+    if (!coverage.length) {
+      return "";
+    }
+    const own = safe(() => e.getTypes().map(typeName), []);
+    const parts = [];
+    for (const c of coverage) {
+      const se = own.some(a => typeMult(a, [c.type]) > 1);
+      const res = typeMult(c.type, own) < 1;
+      if (se) {
+        parts.push(`its STAB hits ${c.type} super effectively${c.hit_super_effectively_by.length ? "" : " (team has nothing that does)"}`);
+      }
+      if (res) {
+        parts.push(`resists ${c.type}${c.resisted_by.length ? "" : " (nobody on the team does)"}`);
+      }
+    }
+    return parts.length ? `biome fit: ${parts.join("; ")}` : "biome fit: no help vs this biome's main types";
+  }
+
   // Decision kinds that are about the fight in front of us. Everything else (rewards, move
   // learning, a full party after a catch, events, biome) gets the team and the run, not the
   // battlefield or the battle log.
   const BATTLE_KINDS = new Set(["command", "target", "check_switch"]);
   const BALL_KINDS = new Set(["command", "modifier"]);
+  // Decisions where the biome's main types matter: fights, catches, releases, rewards/revives.
+  const COVERAGE_KINDS = new Set(["command", "check_switch", "party", "modifier", "catch_full", "learn_move"]);
   const LOG_LINES = { command: 6, target: 6, check_switch: 6, party: 6, confirm: 3, menu: 3 };
 
   function snapshot(opts = {}, d = {}) {
@@ -395,6 +544,12 @@
         balls[b] = safe(() => s.pokeballCounts[i], 0);
       });
       out.pokeballs = balls;
+    }
+    if (COVERAGE_KINDS.has(kind)) {
+      const dominant = safe(() => biomeTypes(), []);
+      if (dominant.length) {
+        out.biome_types = safe(() => biomeCoverage(dominant, party), undefined);
+      }
     }
     const lines = LOG_LINES[kind] ?? 0;
     if (lines) {
@@ -644,7 +799,16 @@
   // Evolutions: the best fully evolved form of a species (highest BST across branches), from
   // the game's own evolution table (exposed by the bundle patch in game.py).
   // ---------------------------------------------------------------------------
+  // Newer PokeRogue builds keep species in a SpeciesDataRegistry instead of allSpecies /
+  // pokemonEvolutions; game.py exposes it as window.__prSpeciesRegistry.
   function speciesById(id) {
+    const reg = window.__prSpeciesRegistry;
+    if (reg && typeof reg.getSpecies === "function") {
+      const sp = safe(() => reg.getSpecies(id), null);
+      if (sp) {
+        return sp;
+      }
+    }
     const all = window.__prAllSpecies;
     if (!Array.isArray(all) || !all.length) {
       return null;
@@ -656,9 +820,18 @@
     return all.find(sp => sp?.speciesId === id) ?? null;
   }
 
+  function evolutionsOf(id) {
+    const reg = window.__prSpeciesRegistry;
+    if (reg && typeof reg.getEvolutions === "function") {
+      return safe(() => reg.getEvolutions(id), null) ?? [];
+    }
+    return window.__prEvolutions?.[id] ?? [];
+  }
+
   function finalForm(species) {
+    const reg = window.__prSpeciesRegistry;
     const evos = window.__prEvolutions;
-    if (!species || !evos || typeof evos !== "object") {
+    if (!species || (!(reg && typeof reg.getEvolutions === "function") && (!evos || typeof evos !== "object"))) {
       return null;
     }
     let best = null;
@@ -668,7 +841,7 @@
         return;
       }
       seen.add(id);
-      const next = (evos[id] ?? []).map(e => e?.speciesId).filter(x => typeof x === "number");
+      const next = (evolutionsOf(id) ?? []).map(e => e?.speciesId).filter(x => typeof x === "number");
       if (!next.length && depth > 0) {
         const sp = speciesById(id);
         if (sp && (!best || sp.baseTotal > best.baseTotal)) {
@@ -780,6 +953,7 @@
             safe(() => `BST ${e.species.baseTotal}`, ""),
             safe(() => finalFormText(e.species), ""),
             e.shiny ? "SHINY" : "",
+            safe(() => biomeFitText(e, biomeCoverage(biomeTypes(), s.getPlayerParty())), ""),
           ].filter(Boolean).join(", ");
           const c = safe(() => catchChance(e, i), null);
           const chance = c === null ? "" : safe(() => e.isBoss(), false) ? ", boss: may not be catchable yet" : `, ~${Math.round(c * 100)}% catch chance`;
