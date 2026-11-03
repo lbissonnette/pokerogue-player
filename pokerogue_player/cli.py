@@ -187,6 +187,10 @@ def main(argv: list[str] | None = None) -> None:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    if not args.verbose:
+        # One "HTTP Request: POST ... 200 OK" line per model call is noise; show it with -v.
+        for name in ("httpx", "httpcore"):
+            logging.getLogger(name).setLevel(logging.WARNING)
     cfg = build_config(args)
     try:
         if args.cmd == "play":
