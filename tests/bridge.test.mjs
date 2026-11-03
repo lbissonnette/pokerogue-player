@@ -647,3 +647,30 @@ test("doubles: single-target moves become move-on-target options and the plan an
   // Plan spent: if the screen comes back, ask normally.
   assert.equal(ctx.__prBot.getDecision().kind, "target");
 });
+
+test("spread moves confirm the target screen with every target; switch labels show the matchup", async () => {
+  const ctx = loadBridge();
+  const { scene, pika, enemy } = makeScene();
+  ctx.__prScene = scene;
+  const enemy2 = mon("Magikarp", { id: 129, onField: true, player: false, types: [10] });
+  scene.getEnemyField = () => [enemy, enemy2];
+  scene.getField = () => [pika, null, enemy, enemy2];
+  ctx.__prGetMoveTargets = () => ({ targets: [2, 3], multiple: true });
+  let d = ctx.__prBot.getDecision();
+  const sw = d.options.find(o => o.id === "switch:1");
+  assert.match(sw.label, /Switch to Squirtle \(Lv10, 50\/50 HP; WATER; best move Surf 1x vs Gyarados\)/);
+  await ctx.__prBot.act(d.seq, "move:0");
+
+  const picked = [];
+  class TargetSelectUiHandler {
+    targets = [2, 3];
+    isMultipleTargets = true;
+    targetSelectCallback = t => picked.push(t);
+  }
+  scene.ui._handler = new TargetSelectUiHandler();
+  scene._phase = { phaseName: "SelectTargetPhase" };
+  d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "auto");
+  await ctx.__prBot.act(d.seq, "__auto__");
+  assert.deepEqual(plain(picked), [[2, 3]]);
+});

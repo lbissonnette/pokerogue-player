@@ -418,6 +418,48 @@
     return { id, label, act, ...extra };
   }
 
+  // Short matchup summary for a switch-in: its types, its best attack against the enemies on
+  // the field (the game's own effectiveness numbers), and the worst it takes from their types.
+  function matchup(p, enemies) {
+    const types = safe(() => p.getTypes().map(typeName), []);
+    const parts = [types.join("/")];
+    let best = null;
+    for (const pm of p.getMoveset().filter(Boolean)) {
+      const move = safe(() => pm.getMove());
+      if (!move || move.category === 2 || !(move.power > 0)) {
+        continue;
+      }
+      const mtype = typeName(safe(() => p.getMoveType(move), move.type));
+      const stab = types.includes(mtype) ? 1.5 : 1;
+      for (const e of enemies) {
+        const x = safe(() => e.getMoveEffectiveness(p, move), null);
+        if (x === null) {
+          continue;
+        }
+        const score = move.power * x * stab;
+        if (!best || score > best.score) {
+          best = { score, text: `best move ${move.name} ${x}x vs ${e.name}` };
+        }
+      }
+    }
+    if (best) {
+      parts.push(best.text);
+    }
+    let worst = null;
+    for (const e of enemies) {
+      for (const t of safe(() => e.getTypes(), [])) {
+        const x = safe(() => p.getAttackTypeEffectiveness(t, e), null);
+        if (x !== null && (!worst || x > worst.x)) {
+          worst = { x, text: `takes ${x}x from ${e.name}'s ${typeName(t)} moves` };
+        }
+      }
+    }
+    if (worst) {
+      parts.push(worst.text);
+    }
+    return parts.filter(Boolean).length ? `; ${parts.filter(Boolean).join("; ")}` : "";
+  }
+
   function commandDecision() {
     const s = scene();
     const phase = currentPhase();
@@ -462,7 +504,12 @@
       const hits =
         mt?.multiple && targets.length > 1 ? `, hits ${targets.map(bi => field[bi].name).join(" and ")}` : "";
       options.push(
-        opt(`move:${i}`, `Use ${m.name} (${stats}${eff ? `, ${eff}` : ""}${hits})`, { type: "fight", move: i }, { move: m }),
+        opt(
+          `move:${i}`,
+          `Use ${m.name} (${stats}${eff ? `, ${eff}` : ""}${hits})`,
+          { type: "fight", move: i, multiple: !!(mt?.multiple && targets.length > 1) },
+          { move: m },
+        ),
       );
     });
     const party = s.getPlayerParty();
@@ -470,7 +517,7 @@
     party.forEach((p, i) => {
       if (canSwitch && !p.isOnField() && !p.isFainted() && safe(() => p.isAllowedInBattle(), true)) {
         options.push(
-          opt(`switch:${i}`, `Switch to ${p.name} (Lv${p.level}, ${p.hp}/${p.getMaxHp()} HP)`, {
+          opt(`switch:${i}`, `Switch to ${p.name} (Lv${p.level}, ${p.hp}/${p.getMaxHp()} HP${matchup(p, enemies)})`, {
             type: "switch",
             slot: i,
           }),
@@ -504,6 +551,11 @@
     const field = s.getField();
     const targets = h.targets ?? [];
     const planned = BOT.pendingMoveTarget;
+    if (h.isMultipleTargets || (planned?.multiple && !planned.used)) {
+      // Spread move: the game still shows the target screen, but every target is hit and
+      // there is nothing to choose. Confirm with all of them, as the handler itself does.
+      return { kind: "auto", act: { type: "target", targets } };
+    }
     if (planned && !planned.used && targets.includes(planned.target)) {
       // The command decision already picked the target.
       return { kind: "auto", act: { type: "target", target: planned.target } };
@@ -651,7 +703,7 @@
     if (reroll >= 0 && reroll <= s.money) {
       options.push(opt("reroll", `Reroll rewards for ${reroll}`, { type: "modifier", row: 0, col: 0 }));
     }
-    options.push(opt("skip", "Skip taking a reward", { type: "modifier", row: -1, col: -1 }));
+    options.push(opt("skip", "Leave without taking a free reward (ends this reward screen; shop purchases are kept)", { type: "modifier", row: -1, col: -1 }));
     return {
       kind: "modifier",
       prompt:
@@ -822,6 +874,11 @@
         if (pn === "SelectStarterPhase") {
           return { kind: "auto", act: { type: "option", index: 0 } };
         }
+        if (pn === "SelectModifierPhase" && BOT.skipRequested) {
+          // "Skip taking a reward?" after the bot already decided to skip: yes.
+          BOT.skipRequested = false;
+          return { kind: "auto", act: { type: "option", index: 0 } };
+        }
         return menuDecision("confirm");
       case "OptionSelectUiHandler":
         return menuDecision(pn === "SelectBiomePhase" ? "biome" : pn === "TitlePhase" ? "title" : "menu");
@@ -929,7 +986,8 @@
         optionSelect(act.index);
         return;
       case "fight":
-        BOT.pendingMoveTarget = act.target === undefined ? null : { target: act.target };
+        BOT.pendingMoveTarget =
+          act.target !== undefined ? { target: act.target } : act.multiple ? { multiple: true } : null;
         await ui.setMode(UiMode.FIGHT, phase.getFieldIndex());
         phase.handleCommand(Command.FIGHT, act.move);
         return;
@@ -961,7 +1019,7 @@
         if (BOT.pendingMoveTarget) {
           BOT.pendingMoveTarget.used = true;
         }
-        handler().targetSelectCallback([act.target]);
+        handler().targetSelectCallback(act.targets ?? [act.target]);
         return;
       case "party_slot":
         if (BOT.pendingTarget) {
@@ -989,6 +1047,7 @@
         return;
       case "modifier": {
         BOT.pendingItem = act.item ?? null;
+        BOT.skipRequested = act.row === -1;
         BOT.pendingTarget = act.target === undefined ? null : { slot: act.target, item: act.item };
         const h = handler();
         const cb = h.onActionInput;

@@ -13,8 +13,11 @@ Guidelines:
 - Type matchups matter most. "effectiveness" is the damage multiplier the game itself \
 computes for that move against that target (0 = immune, 0.5 = resisted, 2/4 = super effective).
 - Same-type moves get a 1.5x bonus (STAB). Watch accuracy, PP and priority.
-- Preserve HP across waves; there is no free healing between most battles. Switch out of bad \
-matchups when the incoming hit is cheap to take.
+- Preserve HP across waves; there is no free healing between most battles.
+- Switching costs your turn and the incoming Pokemon takes the enemy's hit. Only switch when \
+the switch-in clearly wins the matchup: use the "best move ... Nx" and "takes Nx" numbers in \
+the switch options (computed by the game), not your own type chart. Never switch back to a \
+Pokemon you just switched out of unless something changed.
 - Catch Pokemon that fill a gap in the team (types, roles) or that are rare/shiny/not yet caught. \
 Weaken them first if it's safe, and don't waste good balls on weak catches.
 - Rewards: if a party member has fainted, take a revive whenever one is offered (reward or \
