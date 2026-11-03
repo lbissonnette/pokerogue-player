@@ -923,3 +923,19 @@ test("state shows the level cap and who is at it", () => {
   assert.equal(st.level_cap, 10);
   assert.equal(st.party[0].at_level_cap, true); // fake party is Lv10
 });
+
+test("attack options and the prompt show who moves first by Speed and priority", () => {
+  const ctx = loadBridge();
+  const { scene, pika, enemy } = makeScene();
+  ctx.__prScene = scene;
+  pika.getEffectiveStat = stat => ({ 1: 20, 3: 30, 5: 60 })[stat];
+  enemy.getEffectiveStat = stat => ({ 2: 30, 4: 25, 5: 81 })[stat];
+  let d = ctx.__prBot.getDecision();
+  assert.match(d.prompt, /Turn order for normal-priority moves: enemy Gyarados \(Spe 81\) > Pikachu \(Spe 60\)/);
+  assert.match(d.options.find(o => o.id === "move:0").label, /Gyarados moves first, you attack second/);
+  assert.match(d.options.find(o => o.id === "move:1").label, /priority \+1: you move before Gyarados/);
+  scene.arena.tags = [{ tagType: "TRICK_ROOM" }];
+  d = ctx.__prBot.getDecision();
+  assert.match(d.prompt, /Trick Room: slowest first\): Pikachu/);
+  assert.match(d.options.find(o => o.id === "move:0").label, /you move first \(before Gyarados\)/);
+});

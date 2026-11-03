@@ -16,6 +16,13 @@ computes for that move against that target (0 = immune, 0.5 = resisted, 2/4 = su
 - Attack options include "est. X-Y% of <enemy>'s max HP per hit" and how many hits it takes to \
 KO from its current HP. Trust those numbers over your own guess (they ignore abilities, items, \
 weather and crits). Only say a move will "finish" an enemy when it says "likely KO".
+- Turn order: each turn the higher priority move goes first; within the same priority the \
+faster Pokemon (higher Speed, "Spe") moves first (Trick Room reverses this). The command prompt \
+lists the turn order and attack options say "you move first" or "<enemy> moves first, you \
+attack second". When the enemy moves first, you take its hit before yours lands: a "likely \
+KO" doesn't save a Pokemon the enemy can KO first, so consider switching, healing or a \
+priority move. When you move first, a "likely KO" means you take no hit from that enemy. \
+Speed drops/paralysis on the enemy (or boosts on you) can flip the order.
 - Ball options include an estimated catch chance; weaken the target or inflict sleep/paralysis \
 first when the chance is low and it's safe to do so.
 - Preserve HP across waves; there is no free healing between most battles.

@@ -551,6 +551,51 @@
     return `est. ${pct(est.lo)}-${pct(est.hi)}% of ${target.name}'s max HP per hit, ${ko}`;
   }
 
+  // Turn order: higher priority bracket first, then higher Speed (reversed under Trick Room).
+  // The enemy's move is unknown, so it is assumed to be normal priority.
+  function speedOf(p) {
+    return safe(() => p.getEffectiveStat(Stat.SPD), null) ?? safe(() => p.getStat(Stat.SPD), null);
+  }
+
+  function trickRoom() {
+    return safe(
+      () => (scene().arena?.tags ?? []).some(t => /trick_?room/i.test(`${t?.tagType ?? ""} ${t?.constructor?.name ?? ""}`)),
+      false,
+    );
+  }
+
+  function orderText(user, move, target) {
+    const pri = move?.priority ?? 0;
+    if (pri > 0) {
+      return `priority +${pri}: you move before ${target.name}`;
+    }
+    if (pri < 0) {
+      return `priority ${pri}: ${target.name} moves first`;
+    }
+    const a = speedOf(user);
+    const b = speedOf(target);
+    if (!a || !b) {
+      return "";
+    }
+    if (a === b) {
+      return `speed tie with ${target.name} (50/50 who moves first)`;
+    }
+    const first = (a > b) !== trickRoom();
+    return first ? `you move first (before ${target.name})` : `${target.name} moves first, you attack second`;
+  }
+
+  function turnOrderLine(s) {
+    const mons = safe(() => s.getField().filter(p => p && p.isActive(true)), []);
+    const rows = mons.map(p => ({ p, spd: speedOf(p), enemy: !safe(() => p.isPlayer(), true) })).filter(r => r.spd);
+    if (rows.length < 2) {
+      return "";
+    }
+    const tr = trickRoom();
+    rows.sort((x, y) => (tr ? x.spd - y.spd : y.spd - x.spd));
+    const list = rows.map(r => `${r.enemy ? "enemy " : ""}${r.p.name} (Spe ${r.spd})`).join(" > ");
+    return ` Turn order for normal-priority moves${tr ? " (Trick Room: slowest first)" : ""}: ${list}.`;
+  }
+
   // Gen 6 capture formula (what PokeRogue's AttemptCapturePhase uses): three shake checks.
   const BALL_MULT = [1, 1.5, 2, 3, Infinity];
   function catchChance(target, ballIndex) {
@@ -650,7 +695,11 @@
           const t = field[bi];
           const side = bi >= 2 ? "enemy" : "ally";
           const x = m.category === "STATUS" ? null : safe(() => t.getMoveEffectiveness(user, pm.getMove()), null);
-          const dmg = side === "enemy" ? safe(() => damageText(user, pm.getMove(), t), "") : "";
+          const dmg = side === "enemy"
+            ? [safe(() => damageText(user, pm.getMove(), t), ""), safe(() => orderText(user, pm.getMove(), t), "")]
+                .filter(Boolean)
+                .join("; ")
+            : "";
           options.push(
             opt(
               `move:${i}@target:${bi}`,
@@ -667,7 +716,11 @@
       const hits = spread ? `, hits ${targets.map(bi => field[bi].name).join(" and ")}` : "";
       const victims = spread ? targets.filter(bi => bi >= 2).map(bi => field[bi]) : enemies.slice(0, 1);
       const dmg = victims
-        .map(t => safe(() => damageText(user, pm.getMove(), t, spread), ""))
+        .map(t =>
+          [safe(() => damageText(user, pm.getMove(), t, spread), ""), safe(() => orderText(user, pm.getMove(), t), "")]
+            .filter(Boolean)
+            .join(", "),
+        )
         .filter(Boolean)
         .join("; ");
       options.push(
@@ -743,9 +796,10 @@
 
     const partySize = s.getPlayerParty().length;
     const wildNote = battle?.battleType === 0 ? ` Wild battle; party ${partySize}/6.` : "";
+    const order = safe(() => turnOrderLine(s), "");
     const out = {
       kind: "command",
-      prompt: `What should ${user.name} do? (field slot ${fieldIndex})${wildNote}`,
+      prompt: `What should ${user.name} do? (field slot ${fieldIndex})${wildNote}${order}`,
       acting: user.name,
       options,
     };
@@ -758,7 +812,7 @@
     if (partner) {
       out.partner = { acting: partner.name, options: commandOptions(partner, false) };
       out.prompt =
-        `Double battle: choose what ${user.name} (left) and ${partner.name} (right) do this turn, together.`;
+        `Double battle: choose what ${user.name} (left) and ${partner.name} (right) do this turn, together.${order}`;
     }
     return out;
   }
