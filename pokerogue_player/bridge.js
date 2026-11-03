@@ -302,7 +302,6 @@
       .filter(Boolean)
       .filter(pm => revealAll || seenIds.has(pm.moveId))
       .map(pm => moveInfo(e, pm, players));
-    const dex = safe(() => s.gameData.dexData[e.species.speciesId]);
     const out = {
       name: e.name,
       species_id: safe(() => e.species.speciesId),
@@ -316,7 +315,6 @@
       stat_stages: statStages(e),
       boss: safe(() => e.isBoss(), false),
       shiny: !!e.shiny,
-      already_caught: safe(() => BigInt(dex?.caughtAttr ?? 0) > 0n, false),
       known_moves: moves,
     };
     if (revealAll) {
@@ -890,7 +888,8 @@
       kind: "catch_full",
       prompt:
         `You caught ${caught ? monSummary(caught) : name} but the party is full. Keep it by releasing ` +
-        "one party member forever, or let the new Pokemon go.",
+        "one party member forever, or let the new Pokemon go. Judge only which team is stronger " +
+        "for the rest of the run (Pokedex entries don't matter here).",
       options,
     };
   }
@@ -1061,6 +1060,12 @@
       const needsState = !["loading", "busy", "wait", "advance", "auto", "login_required"].includes(d.kind);
       if (needsState && scene()?.currentBattle) {
         d.state = snapshot(opts);
+        if (d.kind === "catch_full") {
+          // The caught Pokemon is described in the prompt; the battle field (where it still
+          // shows as the enemy) only confuses the comparison.
+          delete d.state.enemies;
+          delete d.state.battle;
+        }
       }
       BOT.lastDecision = d;
       return JSON.parse(

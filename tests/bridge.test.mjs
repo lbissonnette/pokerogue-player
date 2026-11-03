@@ -696,6 +696,8 @@ test("full party after a catch: one decision to release a specific member, then 
   assert.deepEqual(plain(d.options.map(o => o.id)), ["release:0", "release:1", "release:2", "decline"]);
   assert.match(d.options[1].label, /^Keep Gyarados and release Squirtle \(Lv10, WATER/);
   assert.match(d.prompt, /You caught Gyarados/);
+  assert.equal(d.state.enemies, undefined, "the caught Pokemon isn't shown again as an enemy");
+  assert.ok(d.state.party.length === 3);
   await ctx.__prBot.act(d.seq, "release:1");
   assert.deepEqual(picked, ["yes"]);
 
