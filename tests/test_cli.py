@@ -37,3 +37,12 @@ def test_format_decision_shows_every_party_move():
     out = format_decision(d)
     assert out.count("- Ember (FIRE SPECIAL, pow 40, PP 20/25)") == 24
     assert "move:0: Use Ember" in out
+
+
+def test_reasoning_flag_adds_to_env(monkeypatch):
+    from pokerogue_player.cli import build_config, build_parser
+
+    monkeypatch.setenv("OPENROUTER_REASONING", "low")
+    args = build_parser().parse_args(["play", "--reasoning", "google/gemini-3.5-flash-lite=xhigh"])
+    cfg = build_config(args)
+    assert cfg.reasoning == {"*": "low", "google/gemini-3.5-flash-lite": "xhigh"}

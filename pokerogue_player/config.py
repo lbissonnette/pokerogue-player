@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .llm import parse_reasoning
+
 DEFAULT_URL = "https://pokerogue.net/"
 DEFAULT_MODEL = "anthropic/claude-haiku-4.5"
 
@@ -36,8 +38,11 @@ class Config:
     model: str = field(default_factory=lambda: os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL))
     # Optional per-decision-kind overrides, e.g. {"modifier": "some/stronger-model"}.
     models: dict[str, str] = field(default_factory=dict)
+    # Thinking level per model: {"*": default, "<model id>": level}. From $OPENROUTER_REASONING
+    # or --reasoning, e.g. "low,google/gemini-3.5-flash-lite=high". Empty = model default.
+    reasoning: dict[str, str] = field(default_factory=lambda: parse_reasoning(os.environ.get("OPENROUTER_REASONING")))
     temperature: float = 0.2
-    llm_timeout_s: float = 60.0
+    llm_timeout_s: float = 120.0  # high thinking levels can take a while
 
     # What the model is allowed to see. False = only what a human player sees.
     reveal_hidden: bool = False

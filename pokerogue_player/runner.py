@@ -273,8 +273,11 @@ async def play(config: Config) -> None:
     memory = RunMemory()
     client = None
     if config.use_llm:
-        client = OpenRouterClient(config.api_key or "", timeout_s=config.llm_timeout_s)
+        client = OpenRouterClient(config.api_key or "", timeout_s=config.llm_timeout_s, reasoning=config.reasoning)
         policy: Policy = LLMPolicy(client, config, memory)
+        log.info("model %s%s, reasoning %s", config.model,
+                 f" (overrides: {config.models})" if config.models else "",
+                 config.reasoning or "model default")
     else:
         policy = RulePolicy()
 

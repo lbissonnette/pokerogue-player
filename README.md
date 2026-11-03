@@ -49,6 +49,11 @@ pokerogue-player play --continue
 # Choose models: a cheap one for battle turns, a stronger one for rewards and move learning
 pokerogue-player play --model some/cheap-model --model-for modifier=some/strong-model --model-for learn_move=some/strong-model
 
+# Thinking level (xhigh, high, medium, low, minimal, none, or a token count). A bare level is
+# the default for every model; MODEL=LEVEL sets one model. Also settable as
+# OPENROUTER_REASONING in .env, e.g. OPENROUTER_REASONING=low,google/gemini-3.5-flash-lite=high
+pokerogue-player play --reasoning google/gemini-3.5-flash-lite=high --reasoning google/gemini-3.5-flash=low
+
 # No LLM at all, rules only (handy for checking the plumbing)
 pokerogue-player play --no-llm --max-decisions 20
 

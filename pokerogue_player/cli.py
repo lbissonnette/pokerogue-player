@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 from .config import DEFAULT_URL, Config
+from .llm import parse_reasoning
 
 
 def load_dotenv(path: Path = Path(".env")) -> None:
@@ -42,6 +43,11 @@ def build_config(args: argparse.Namespace) -> Config:
         cfg.model = args.model
     if getattr(args, "model_for", None):
         cfg.models = _parse_models(args.model_for)
+    if getattr(args, "reasoning", None):
+        try:
+            cfg.reasoning = {**cfg.reasoning, **parse_reasoning(",".join(args.reasoning))}
+        except ValueError as e:
+            raise SystemExit(f"--reasoning: {e}") from None
     for name in ("reveal_hidden", "max_decisions"):
         if hasattr(args, name) and getattr(args, name) is not None:
             setattr(cfg, name, getattr(args, name))
@@ -142,7 +148,7 @@ async def _login(cfg: Config) -> None:
         await game.stop()
 
 
-def main(argv: list[str] | None = None) -> None:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="pokerogue-player", description="Play PokeRogue with an LLM.")
     p.add_argument("--url", default=DEFAULT_URL)
     p.add_argument("--profile", default=".browser-profile", help="Browser profile dir (keeps you logged in)")
@@ -160,12 +166,21 @@ def main(argv: list[str] | None = None) -> None:
     play.add_argument("--starters", help="Comma-separated national dex numbers, e.g. 4,7,1 (default: LLM picks)")
     play.add_argument("--no-auto-settings", action="store_true",
                       help="Don't change game speed/tutorial/battle-style settings")
+    play.add_argument("--reasoning", action="append", metavar="[MODEL=]LEVEL",
+                      help="Thinking level: xhigh, high, medium, low, minimal, none, or a token count. "
+                           "A bare level applies to every model; MODEL=LEVEL to one model (repeatable; "
+                           "adds to $OPENROUTER_REASONING)")
     play.add_argument("--reveal-hidden", action="store_true", help="Show the model hidden enemy info")
     play.add_argument("--max-decisions", type=int)
 
     sub.add_parser("inspect", help="Print what the bridge sees, without acting")
     sub.add_parser("login", help="Open the browser so you can log in once")
 
+    return p
+
+
+def main(argv: list[str] | None = None) -> None:
+    p = build_parser()
     args = p.parse_args(argv)
     load_dotenv()
     logging.basicConfig(
