@@ -289,6 +289,7 @@
       slot: i,
       name: p.name,
       bst: safe(() => p.species.baseTotal),
+      evolves_into: safe(() => finalFormText(p.species), "") || undefined,
       level: p.level,
       types: safe(() => p.getTypes().map(typeName), []),
       ability: safe(() => p.getAbility().name),
@@ -564,6 +565,56 @@
     return Math.pow(shake, 3);
   }
 
+  // ---------------------------------------------------------------------------
+  // Evolutions: the best fully evolved form of a species (highest BST across branches), from
+  // the game's own evolution table (exposed by the bundle patch in game.py).
+  // ---------------------------------------------------------------------------
+  function speciesById(id) {
+    const all = window.__prAllSpecies;
+    if (!Array.isArray(all) || !all.length) {
+      return null;
+    }
+    const direct = all[id - 1];
+    if (direct?.speciesId === id) {
+      return direct;
+    }
+    return all.find(sp => sp?.speciesId === id) ?? null;
+  }
+
+  function finalForm(species) {
+    const evos = window.__prEvolutions;
+    if (!species || !evos || typeof evos !== "object") {
+      return null;
+    }
+    let best = null;
+    const seen = new Set();
+    const walk = (id, depth) => {
+      if (seen.has(id) || depth > 4) {
+        return;
+      }
+      seen.add(id);
+      const next = (evos[id] ?? []).map(e => e?.speciesId).filter(x => typeof x === "number");
+      if (!next.length && depth > 0) {
+        const sp = speciesById(id);
+        if (sp && (!best || sp.baseTotal > best.baseTotal)) {
+          best = sp;
+        }
+      }
+      next.forEach(n => walk(n, depth + 1));
+    };
+    walk(species.speciesId, 0);
+    return best;
+  }
+
+  function finalFormText(species) {
+    const f = safe(() => finalForm(species), null);
+    if (!f) {
+      return "";
+    }
+    const types = [f.type1, f.type2].filter(t => t !== null && t !== undefined && t !== -1).map(typeName).join("/");
+    return `evolves into ${f.name} (${types}, BST ${f.baseTotal})`;
+  }
+
   /** Legal commands for `user`. `turnWide` adds Poke Balls and Run, which end the whole turn. */
   function commandOptions(user, turnWide = true) {
     const s = scene();
@@ -644,6 +695,7 @@
           const info = [
             safe(() => e.getTypes().map(typeName).join("/"), ""),
             safe(() => `BST ${e.species.baseTotal}`, ""),
+            safe(() => finalFormText(e.species), ""),
             e.shiny ? "SHINY" : "",
           ].filter(Boolean).join(", ");
           const c = safe(() => catchChance(e, i), null);
@@ -680,9 +732,11 @@
       }
     }
 
+    const partySize = s.getPlayerParty().length;
+    const wildNote = battle?.battleType === 0 ? ` Wild battle; party ${partySize}/6.` : "";
     const out = {
       kind: "command",
-      prompt: `What should ${user.name} do? (field slot ${fieldIndex})`,
+      prompt: `What should ${user.name} do? (field slot ${fieldIndex})${wildNote}`,
       acting: user.name,
       options,
     };
@@ -1067,7 +1121,9 @@
   function monSummary(p) {
     const types = safe(() => p.getTypes().map(typeName).join("/"), "?");
     const bst = safe(() => p.species.baseTotal, null);
-    const extra = [p.shiny ? "shiny" : "", bst ? `BST ${bst}` : ""].filter(Boolean).join(", ");
+    const extra = [p.shiny ? "shiny" : "", bst ? `BST ${bst}` : "", safe(() => finalFormText(p.species), "")]
+      .filter(Boolean)
+      .join(", ");
     return `${p.name} (Lv${p.level}, ${types}${extra ? `, ${extra}` : ""}, ${hpText(p)})`;
   }
 

@@ -23,13 +23,17 @@ first when the chance is low and it's safe to do so.
 the switch-in clearly wins the matchup: use the "best move ... Nx" and "takes Nx" numbers in \
 the switch options (computed by the game), not your own type chart. Never switch back to a \
 Pokemon you just switched out of unless something changed.
-- Catching: only throw a ball at a Pokemon that is shiny, or one you actually intend to put \
-in the team (it fills a type gap or will clearly be stronger than a current member). Don't \
-catch just because it's a new dex entry, it's weak, or you have balls to spare; otherwise \
-just defeat it. Weaken a catch target first if it's safe, and use better balls on better \
-targets.
-- Full party after a catch: only release a party member if the new Pokemon is clearly better \
-for the run (stronger species/evolution line, BST, needed type, shiny). Never release a Pokemon \
+- Catching (wild battles only; the command prompt shows "party N/6"). For every wild Pokemon, \
+decide: if the party has fewer than 6, catch it (weaken it first if safe). If the party is \
+full, catch it only if it's shiny, or its fully evolved form ("evolves into ..., BST N" in the \
+ball option; its own BST if none is listed) has a clearly higher BST (roughly 50+) than the \
+fully evolved form of your \
+weakest party member, or replacing a party member with it would add type coverage the team \
+lacks. Otherwise just defeat it. Use the catch chance to pick the ball; save better balls \
+for better targets.
+- Full party after a catch: release a party member only if the new Pokemon is clearly better \
+for the run by the same test: higher fully evolved BST than that member's fully evolved form, \
+or type coverage the team lacks (or shiny). Release the weakest member by that measure. Never release a Pokemon \
 the team relies on, or one holding valuable items.
 - Rewards: if a party member has fainted, take a revive whenever one is offered (reward or \
 shop) and give it to the fainted Pokemon. Otherwise prioritize healing when the team is hurt, then items that permanently strengthen the \

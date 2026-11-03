@@ -25,6 +25,12 @@ _INIT_SCENE_RE = re.compile(r"function initGlobalScene\s*\(\s*([\w$]+)\s*\)\s*\{
 _MOVE_TARGETS_RE = re.compile(r"(^|[;{}\n])(\s*)function getMoveTargets\s*\(")
 
 
+# Species data for "what does this evolve into": the evolution table and the species list
+# are module constants. Expose them by chaining an assignment onto their declarations.
+_EVOLUTIONS_RE = re.compile(r"\b(const|let|var)\s+pokemonEvolutions\s*=(?!=)")
+_ALL_SPECIES_RE = re.compile(r"\b(const|let|var)\s+allSpecies\s*=(?!=)")
+
+
 def patch_bundle_text(body: str) -> tuple[str, list[str]]:
     """Apply the bridge hooks to one JS file. Returns the new text and the hooks applied."""
     applied = []
@@ -42,6 +48,14 @@ def patch_bundle_text(body: str) -> tuple[str, list[str]]:
         )
         if n:
             applied.append("getMoveTargets")
+    if "pokemonEvolutions" in body:
+        body, n = _EVOLUTIONS_RE.subn(lambda m: f"{m.group(1)} pokemonEvolutions=window.__prEvolutions=", body, count=1)
+        if n:
+            applied.append("pokemonEvolutions")
+    if "allSpecies" in body:
+        body, n = _ALL_SPECIES_RE.subn(lambda m: f"{m.group(1)} allSpecies=window.__prAllSpecies=", body, count=1)
+        if n:
+            applied.append("allSpecies")
     return body, applied
 
 

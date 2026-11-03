@@ -26,3 +26,12 @@ def test_patched_bundle_still_runs_and_hoists(tmp_path):
     script = out + "console.log(JSON.stringify(window.__prGetMoveTargets(0,5)))"
     res = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
     assert res.stdout.strip() == '{"targets":[5],"multiple":false}', res.stderr
+
+
+def test_patch_bundle_exposes_species_data():
+    body = "const allSpecies=[];var x=1;const pokemonEvolutions={1:[{speciesId:2}]};if(allSpecies==x){}"
+    out, applied = patch_bundle_text(body)
+    assert applied == ["pokemonEvolutions", "allSpecies"]
+    assert "const allSpecies=window.__prAllSpecies=[]" in out
+    assert "const pokemonEvolutions=window.__prEvolutions={1:" in out
+    assert "if(allSpecies==x)" in out

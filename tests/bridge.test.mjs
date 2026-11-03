@@ -898,3 +898,18 @@ test("Ether move picker shows PP and hides full moves; Ethers aren't sold", asyn
   assert.deepEqual(plain(d.options.map(o => o.label)), ["Move: Growl (NORMAL STATUS, pow -1, PP 0/40)"]);
   assert.match(d.prompt, /least PP left/);
 });
+
+test("ball options and party show the fully evolved form; wild prompts show party size", () => {
+  const ctx = loadBridge();
+  const { scene, enemy } = makeScene();
+  ctx.__prScene = scene;
+  enemy.species = { speciesId: 129, baseTotal: 200 };
+  ctx.__prAllSpecies = [];
+  ctx.__prAllSpecies[128] = { speciesId: 129, name: "Magikarp", baseTotal: 200, type1: 10, type2: null };
+  ctx.__prAllSpecies[129] = { speciesId: 130, name: "Gyarados", baseTotal: 540, type1: 10, type2: 2 };
+  ctx.__prEvolutions = { 129: [{ speciesId: 130 }] };
+  const d = ctx.__prBot.getDecision();
+  assert.match(d.prompt, /Wild battle; party 3\/6\./);
+  const ball = d.options.find(o => o.id === "ball:0");
+  assert.match(ball.label, /BST 200, evolves into Gyarados \(WATER\/FLYING, BST 540\)/);
+});
