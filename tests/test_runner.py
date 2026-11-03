@@ -1,0 +1,194 @@
+import pytest
+
+from pokerogue_player.config import Config
+from pokerogue_player.policy import RulePolicy, RunMemory
+from pokerogue_player.runner import Runner, StopRun
+
+
+class FakeGame:
+    def __init__(self, decisions):
+        self.decisions = list(decisions)
+        self.acts = []
+        self.starters = None
+
+    async def decision(self):
+        return self.decisions.pop(0)
+
+    async def act(self, seq, option_id):
+        self.acts.append((seq, option_id))
+        return {"ok": True}
+
+    async def starter_candidates(self):
+        return {"ok": True, "budget": 10, "candidates": [
+            {"id": 1, "name": "Bulbasaur", "types": ["GRASS"], "cost": 3, "bst": 318},
+            {"id": 4, "name": "Charmander", "types": ["FIRE"], "cost": 3, "bst": 309},
+        ]}
+
+    async def choose_starters(self, ids):
+        self.starters = ids
+        return {"ok": True}
+
+    async def cancel(self):
+        self.acts.append(("cancel",))
+
+    async def screenshot(self, path):
+        pass
+
+    async def status(self):
+        return {}
+
+
+def make_runner(tmp_path, decisions, **cfg):
+    game = FakeGame(decisions)
+    cfg.setdefault("state_file", tmp_path / "bot-state.json")
+    return Runner(Config(api_key="x", **cfg), game, RulePolicy(), RunMemory(), tmp_path), game
+
+
+async def test_auto_and_decision_flow(tmp_path):
+    runner, game = make_runner(tmp_path, [
+        {"kind": "advance", "seq": 1},
+        {"kind": "loading", "seq": 2},
+        {"kind": "command", "seq": 3, "acting": "A", "state": {"wave": 1, "party": []},
+         "options": [{"id": "move:0", "label": "Tackle", "move": {"power": 40}}, {"id": "run", "label": "Run"}]},
+    ])
+    for _ in range(3):
+        await runner.step()
+    runner.close()
+    assert game.acts == [(1, "__auto__"), (3, "move:0")]
+    assert '"choice": "move:0"' in (tmp_path / "decisions.jsonl").read_text()
+
+
+async def test_title_new_game_then_stop_when_back_at_title(tmp_path):
+    title = {"kind": "title", "phase": "TitlePhase", "options": [
+        {"id": "opt:0", "label": "Continue"}, {"id": "opt:1", "label": "New Game"}]}
+    modes = {"kind": "menu", "phase": "TitlePhase", "options": [
+        {"id": "opt:0", "label": "Classic"}, {"id": "opt:1", "label": "Daily Run"}]}
+    title = dict(title, handler="TitleUiHandler")
+    empty_menu = {"kind": "menu", "phase": "TitlePhase", "seq": 3, "options": []}
+    later = [dict(title, seq=10 + i) for i in range(5)]
+    runner, game = make_runner(tmp_path, [dict(title, seq=1), dict(modes, seq=2), empty_menu, *later])
+    runner.config.title_choice = "new"
+    await runner.step()
+    await runner.step()
+    await runner.step()  # empty transitional menu: ignored, not a crash
+    assert game.acts == [(1, "opt:1"), (2, "opt:0")]
+    for _ in range(4):
+        await runner.step()  # title must persist before we call the run over
+    with pytest.raises(StopRun):
+        await runner.step()
+    assert game.acts == [(1, "opt:1"), (2, "opt:0")]
+
+
+async def test_save_slot_never_overwrites_by_default(tmp_path):
+    full = {"kind": "save_slot", "seq": 1, "save_mode": "SAVE",
+            "options": [{"id": "slot:0", "label": "1", "has_data": True}]}
+    runner, game = make_runner(tmp_path, [full, dict(full, seq=2, options=full["options"] + [
+        {"id": "slot:1", "label": "2", "has_data": False}])])
+    with pytest.raises(StopRun):
+        await runner.step()
+    await runner.step()
+    assert game.acts == [(2, "slot:1")]
+
+
+async def test_starter_select_uses_config(tmp_path):
+    runner, game = make_runner(tmp_path, [{"kind": "starter_select", "seq": 1}], starters=[25])
+    await runner.step()
+    assert game.starters == [25]
+
+
+async def test_starter_select_without_config_uses_picker(tmp_path):
+    runner, game = make_runner(tmp_path, [{"kind": "starter_select", "seq": 1}])
+    await runner.step()  # no LLM client -> heuristic
+    assert sorted(game.starters) == [1, 4]
+
+
+async def test_saving_records_bot_slot(tmp_path):
+    d = {"kind": "save_slot", "seq": 1, "save_mode": "SAVE", "options": [
+        {"id": "slot:0", "label": "1", "has_data": True},
+        {"id": "slot:1", "label": "2", "has_data": True},
+        {"id": "slot:2", "label": "3", "has_data": False}]}
+    runner, game = make_runner(tmp_path, [d])
+    await runner.step()
+    assert game.acts == [(1, "slot:2")]
+    assert '"slot": 2' in (tmp_path / "bot-state.json").read_text()
+
+
+async def test_continue_needs_a_recorded_bot_run_and_never_uses_title_continue(tmp_path):
+    title = {"kind": "title", "phase": "TitlePhase", "seq": 1, "options": [
+        {"id": "opt:0", "label": "Continue"}, {"id": "opt:1", "label": "New Game"},
+        {"id": "opt:2", "label": "Load Game"}]}
+    runner, game = make_runner(tmp_path, [dict(title)], title_choice="continue")
+    with pytest.raises(StopRun):
+        await runner.step()
+    (tmp_path / "bot-state.json").write_text('{"slot": 3}')
+    runner, game = make_runner(tmp_path, [dict(title)], title_choice="continue")
+    await runner.step()
+    assert game.acts == [(1, "opt:2")]
+
+
+async def test_load_only_the_bot_slot(tmp_path):
+    (tmp_path / "bot-state.json").write_text('{"slot": 1}')
+    load = {"kind": "save_slot", "seq": 1, "save_mode": "LOAD", "options": [
+        {"id": "slot:0", "label": "1", "has_data": True},
+        {"id": "slot:1", "label": "2", "has_data": True}]}
+    runner, game = make_runner(tmp_path, [load], title_choice="continue")
+    await runner.step()
+    assert game.acts == [(1, "slot:1")]
+    load2 = dict(load, seq=2, options=[{"id": "slot:0", "label": "1", "has_data": True},
+                                       {"id": "slot:1", "label": "2", "has_data": False}])
+    runner, game = make_runner(tmp_path, [load2], title_choice="continue")
+    with pytest.raises(StopRun):
+        await runner.step()
+    assert game.acts == []
+
+
+async def test_dangerous_options_never_reach_the_policy(tmp_path):
+    d = {"kind": "menu", "seq": 1, "phase": "X", "options": [
+        {"id": "opt:0", "label": "Delete Run"}, {"id": "opt:1", "label": "Overwrite data"},
+        {"id": "opt:2", "label": "Cancel"}]}
+    runner, game = make_runner(tmp_path, [d])
+    await runner.step()
+    assert game.acts == [(1, "opt:2")]
+
+
+async def test_repeated_failing_choice_is_excluded_then_backs_out(tmp_path):
+    def d(seq):
+        return {"kind": "party", "seq": seq, "phase": "SwitchPhase", "state": {"wave": 1, "battle": {"turn": 3},
+                "party": [{"slot": 1, "hp": 5, "max_hp": 10}, {"slot": 2, "hp": 9, "max_hp": 10}]},
+                "options": [{"id": "slot:1", "label": "a"}, {"id": "slot:2", "label": "b"}]}
+    runner, game = make_runner(tmp_path, [d(i) for i in range(1, 7)])
+    for _ in range(6):
+        await runner.step()
+    # healthiest (slot:2) twice, then slot:1 twice, then everything failed -> cancel
+    assert game.acts[:4] == [(1, "slot:2"), (2, "slot:2"), (3, "slot:1"), (4, "slot:1")]
+    assert game.acts[4] == ("cancel",)
+
+
+async def test_command_without_moves_stops(tmp_path):
+    d = {"kind": "command", "seq": 1, "acting": "Rowlet", "state": {"wave": 1},
+         "options": [{"id": "switch:1", "label": "Switch"}, {"id": "run", "label": "Run"}]}
+    runner, game = make_runner(tmp_path, [d])
+    with pytest.raises(StopRun):
+        await runner.step()
+    assert game.acts == []
+
+
+def test_dangerous_label_matches_whole_words_only():
+    from pokerogue_player.runner import DANGEROUS_LABEL
+
+    assert DANGEROUS_LABEL.search("Delete")
+    assert DANGEROUS_LABEL.search("Overwrite this save?")
+    assert not DANGEROUS_LABEL.search("Forget Scratch to learn Fury Swipes")
+    assert not DANGEROUS_LABEL.search("Don't learn Fury Swipes")
+
+
+async def test_separate_learn_move_questions_dont_share_failure_counts(tmp_path):
+    def d(seq, who):
+        return {"kind": "learn_move", "seq": seq, "phase": "LearnMovePhase", "state": {"wave": 4},
+                "prompt": f"{who} wants to learn a move", "new_move": {"power": 0},
+                "options": [{"id": f"forget:{i}", "label": "x", "move": {"power": 50}} for i in range(4)]
+                + [{"id": "keep", "label": "Don't learn"}]}
+    runner, game = make_runner(tmp_path, [d(1, "A"), d(2, "B"), d(3, "C")])
+    for _ in range(3):
+        await runner.step()
+    assert [a[1] for a in game.acts] == ["keep", "keep", "keep"]
