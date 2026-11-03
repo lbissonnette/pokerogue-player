@@ -973,3 +973,27 @@ test("battle start offers keep or switch as equal choices, then sends out the pi
   assert.equal(next.kind, "auto");
   assert.deepEqual(plain(next.act), { type: "party_slot", slot: 1, planned: true });
 });
+
+test("speed uses the game's effective Speed (new options-object signature) and halves for paralysis on fallback", () => {
+  const ctx = loadBridge();
+  const { scene, pika, enemy } = makeScene();
+  ctx.__prScene = scene;
+  // Game-style: getEffectiveStat(stat, { opponent, move }) already halves paralyzed Speed.
+  const seen = [];
+  enemy.status = { effect: 3 };
+  enemy.getEffectiveStat = (stat, params = {}) => {
+    seen.push(params);
+    return stat === 5 ? 40 : 30;
+  };
+  pika.getEffectiveStat = (stat, params = {}) => (stat === 5 ? 60 : 30);
+  let d = ctx.__prBot.getDecision();
+  assert.match(d.prompt, /Pikachu \(Spe 60\) > enemy Gyarados \(Spe 40\)/);
+  assert.ok(seen.some(p => p && "opponent" in p), "called with an options object");
+  // No usable getEffectiveStat: raw Speed, halved for paralysis.
+  enemy.getEffectiveStat = undefined;
+  pika.getEffectiveStat = undefined;
+  enemy.getStat = stat => (stat === 5 ? 100 : 30);
+  pika.getStat = stat => (stat === 5 ? 60 : 30);
+  d = ctx.__prBot.getDecision();
+  assert.match(d.prompt, /Pikachu \(Spe 60\) > enemy Gyarados \(Spe 50\)/);
+});

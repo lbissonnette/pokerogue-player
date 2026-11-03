@@ -510,8 +510,18 @@
   // ---------------------------------------------------------------------------
   const Stat = { HP: 0, ATK: 1, DEF: 2, SPATK: 3, SPDEF: 4, SPD: 5 };
 
+  // Current PokeRogue takes getEffectiveStat(stat, { opponent, move }); older builds took
+  // getEffectiveStat(stat, opponent, move). Function.length tells them apart (1 vs 3+).
+  function effectiveStat(p, stat, opponent, move) {
+    const fn = p.getEffectiveStat;
+    if (typeof fn !== "function") {
+      return null;
+    }
+    return fn.length <= 1 ? fn.call(p, stat, { opponent, move }) : fn.call(p, stat, opponent, move);
+  }
+
   function statOf(p, stat, opponent, move) {
-    return safe(() => p.getEffectiveStat(stat, opponent, move), null) ?? safe(() => p.getStat(stat), null);
+    return safe(() => effectiveStat(p, stat, opponent, move), null) ?? safe(() => p.getStat(stat), null);
   }
 
   /** {lo, hi} damage as a fraction of the target's max HP, or null if not a plain attack. */
@@ -553,8 +563,19 @@
 
   // Turn order: higher priority bracket first, then higher Speed (reversed under Trick Room).
   // The enemy's move is unknown, so it is assumed to be normal priority.
+  // The game's effective Speed already includes stat stages, paralysis (halved), Tailwind,
+  // abilities and items. Only if that call fails do we fall back to the raw stat, and then
+  // apply paralysis ourselves.
   function speedOf(p) {
-    return safe(() => p.getEffectiveStat(Stat.SPD), null) ?? safe(() => p.getStat(Stat.SPD), null);
+    const eff = safe(() => effectiveStat(p, Stat.SPD), null);
+    if (eff) {
+      return eff;
+    }
+    const raw = safe(() => p.getStat(Stat.SPD), null);
+    if (!raw) {
+      return null;
+    }
+    return STATUS[safe(() => p.status?.effect, 0)] === "PARALYSIS" ? Math.floor(raw / 2) : raw;
   }
 
   function trickRoom() {
