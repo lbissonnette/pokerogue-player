@@ -149,6 +149,11 @@ class RulePolicy:
             return Choice(weakest["id"], "new move is stronger than the weakest current move")
         return Choice("keep", "current moves are at least as good")
 
+    def _catch_full(self, options, decision, state):
+        # Releasing is permanent; without judgement, keep the party as it is.
+        keep = next((o for o in options if o["id"] == "decline"), None)
+        return Choice(keep["id"], "party is full; keep the current team") if keep else None
+
     def _mystery(self, options, decision, state):
         # Without judgement, the last option (usually "leave" / decline) is the safest.
         return Choice(options[-1]["id"], "safest default: last option (usually leave)")

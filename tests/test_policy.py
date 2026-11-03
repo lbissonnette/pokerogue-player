@@ -203,3 +203,8 @@ async def test_rule_command_with_targets_picks_best_enemy_never_ally():
     ]
     d = {"kind": "command", "acting": "Pika", "state": {"party": []}, "options": opts}
     assert (await RulePolicy().choose(d)).option_id == "move:0@target:3"
+
+
+async def test_rule_catch_full_keeps_the_team():
+    d = {"kind": "catch_full", "options": [{"id": "release:0", "label": "x"}, {"id": "decline", "label": "y"}]}
+    assert (await RulePolicy().choose(d)).option_id == "decline"

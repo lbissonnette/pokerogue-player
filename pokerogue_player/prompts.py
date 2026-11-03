@@ -20,6 +20,9 @@ the switch options (computed by the game), not your own type chart. Never switch
 Pokemon you just switched out of unless something changed.
 - Catch Pokemon that fill a gap in the team (types, roles) or that are rare/shiny/not yet caught. \
 Weaken them first if it's safe, and don't waste good balls on weak catches.
+- Full party after a catch: only release a party member if the new Pokemon is clearly better \
+for the run (stronger species/evolution line, BST, needed type, shiny). Never release a Pokemon \
+the team relies on, or one holding valuable items.
 - Rewards: if a party member has fainted, take a revive whenever one is offered (reward or \
 shop) and give it to the fainted Pokemon. Otherwise prioritize healing when the team is hurt, then items that permanently strengthen the \
 team (EXP items, stat boosters, good held items), then everything else. Save money for revives \

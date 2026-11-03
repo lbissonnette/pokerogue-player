@@ -674,3 +674,62 @@ test("spread moves confirm the target screen with every target; switch labels sh
   await ctx.__prBot.act(d.seq, "__auto__");
   assert.deepEqual(plain(picked), [[2, 3]]);
 });
+
+test("full party after a catch: one decision to release a specific member, then the release is automatic", async () => {
+  const ctx = loadBridge();
+  const { scene, pika, enemy } = makeScene();
+  ctx.__prScene = scene;
+  const picked = [];
+  class OptionSelectUiHandler {
+    options = [
+      { label: "Yes", handler: () => picked.push("yes") || true },
+      { label: "No", handler: () => picked.push("no") || true },
+    ];
+    clear() {}
+  }
+  scene._phase = { phaseName: "AttemptCapturePhase", getPokemon: () => enemy };
+  scene.ui._handler = new OptionSelectUiHandler();
+  let d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "catch_full");
+  assert.deepEqual(plain(d.options.map(o => o.id)), ["release:0", "release:1", "release:2", "decline"]);
+  assert.match(d.options[1].label, /^Keep Gyarados and release Squirtle \(Lv10, WATER/);
+  assert.match(d.prompt, /You caught Gyarados/);
+  await ctx.__prBot.act(d.seq, "release:1");
+  assert.deepEqual(picked, ["yes"]);
+
+  class PartyUiHandler {
+    partyUiMode = 5;
+    optionsMode = false;
+    options = [];
+    cursor = 0;
+    setCursor(c) {
+      if (this.optionsMode) this.optionsCursor = c;
+      else this.cursor = c;
+    }
+    processInput() {
+      if (!this.optionsMode) {
+        this.optionsMode = true;
+        this.options = [11 /* RELEASE */, 6 /* SUMMARY */, -1];
+      } else {
+        this.chosen = this.options[this.optionsCursor];
+      }
+    }
+    allowCancel() {
+      return true;
+    }
+  }
+  const ph = new PartyUiHandler();
+  scene.ui._handler = ph;
+  d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "auto");
+  await ctx.__prBot.act(d.seq, "__auto__");
+  assert.equal(ph.cursor, 1);
+  assert.equal(ph.chosen, 11);
+
+  // "Do you really want to release Squirtle?" -> yes, without asking.
+  scene.ui._handler = new OptionSelectUiHandler();
+  d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "auto");
+  await ctx.__prBot.act(d.seq, "__auto__");
+  assert.deepEqual(picked, ["yes", "yes"]);
+});

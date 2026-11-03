@@ -592,6 +592,9 @@
       return { kind: "party_option", prompt: `Choose an option for ${p?.name}.`, options };
     }
     const mode = h.partyUiMode;
+    if (BOT.releasePlan?.stage === "party" && phase === "AttemptCapturePhase" && party[BOT.releasePlan.slot]) {
+      return { kind: "auto", act: { type: "release_slot", slot: BOT.releasePlan.slot } };
+    }
     const planned = BOT.pendingTarget;
     if (planned && !planned.used && phase === "SelectModifierPhase" && party[planned.slot]) {
       // The reward decision already chose who gets the item. Use it once; if the game
@@ -795,6 +798,52 @@
     return { kind: "mystery", prompt: description.join(" "), options };
   }
 
+  const YES = /^\s*yes\s*$/i;
+  const NO = /^\s*no\s*$/i;
+
+  function monSummary(p) {
+    const types = safe(() => p.getTypes().map(typeName).join("/"), "?");
+    const bst = safe(() => p.species.baseTotal, null);
+    const extra = [p.shiny ? "shiny" : "", bst ? `BST ${bst}` : ""].filter(Boolean).join(", ");
+    return `${p.name} (Lv${p.level}, ${types}${extra ? `, ${extra}` : ""}, ${hpText(p)})`;
+  }
+
+  // A catch with a full party: "release a Pokemon to make room for X?". Offered as one
+  // decision: keep X by releasing a specific party member, or let X go.
+  function catchFullDecision(phase) {
+    const h = handler();
+    const labels = (h.options ?? []).map(o => cleanText(o.label));
+    const yes = labels.findIndex(l => YES.test(l));
+    const no = labels.findIndex(l => NO.test(l));
+    const plan = BOT.releasePlan;
+    if (plan?.stage === "released" && yes >= 0) {
+      // "Do you really want to release <party member>?" after picking them on the party screen.
+      BOT.releasePlan = { ...plan, stage: "done" };
+      return { kind: "auto", act: { type: "option", index: yes } };
+    }
+    if (yes < 0 || no < 0 || plan) {
+      return menuDecision("menu");
+    }
+    const caught = safe(() => phase.getPokemon());
+    const party = scene().getPlayerParty();
+    const name = caught?.name ?? "the new Pokemon";
+    const options = party.map((p, i) =>
+      opt(`release:${i}`, `Keep ${name} and release ${monSummary(p)} (permanent)`, {
+        type: "release_plan",
+        slot: i,
+        index: yes,
+      }),
+    );
+    options.push(opt("decline", `Don't keep ${name}; the party stays as it is`, { type: "option", index: no }));
+    return {
+      kind: "catch_full",
+      prompt:
+        `You caught ${caught ? monSummary(caught) : name} but the party is full. Keep it by releasing ` +
+        "one party member forever, or let the new Pokemon go.",
+      options,
+    };
+  }
+
   function menuDecision(kind) {
     const h = handler();
     const options = (h.options ?? [])
@@ -825,6 +874,11 @@
     }
     if (hn !== "SaveSlotSelectUiHandler") {
       BOT.allowLoad = false;
+    }
+    if (pn !== "AttemptCapturePhase") {
+      BOT.releasePlan = null;
+    } else if (hn === "OptionSelectUiHandler" || hn === "ConfirmUiHandler") {
+      return catchFullDecision(phase);
     }
 
     switch (hn) {
@@ -1035,6 +1089,15 @@
             h.processInput(Button.ACTION);
           }
         }
+        return;
+      case "release_plan":
+        BOT.releasePlan = { slot: act.slot, stage: "party" };
+        optionSelect(act.index);
+        return;
+      case "release_slot":
+        // One attempt only: if the game refuses, the party screen is asked about normally.
+        BOT.releasePlan = { ...BOT.releasePlan, stage: "released" };
+        await partySelect(act.slot, PartyOption.RELEASE);
         return;
       case "party_option": {
         const h = handler();
