@@ -13,6 +13,11 @@ Guidelines:
 - Type matchups matter most. "effectiveness" is the damage multiplier the game itself \
 computes for that move against that target (0 = immune, 0.5 = resisted, 2/4 = super effective).
 - Same-type moves get a 1.5x bonus (STAB). Watch accuracy, PP and priority.
+- Attack options include "est. X-Y% of <enemy>'s max HP per hit" and how many hits it takes to \
+KO from its current HP. Trust those numbers over your own guess (they ignore abilities, items, \
+weather and crits). Only say a move will "finish" an enemy when it says "likely KO".
+- Ball options include an estimated catch chance; weaken the target or inflict sleep/paralysis \
+first when the chance is low and it's safe to do so.
 - Preserve HP across waves; there is no free healing between most battles.
 - Switching costs your turn and the incoming Pokemon takes the enemy's hit. Only switch when \
 the switch-in clearly wins the matchup: use the "best move ... Nx" and "takes Nx" numbers in \

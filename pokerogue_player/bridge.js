@@ -493,6 +493,77 @@
     return parts.filter(Boolean).length ? `; ${parts.filter(Boolean).join("; ")}` : "";
   }
 
+  // ---------------------------------------------------------------------------
+  // Estimates: damage per hit and catch chance. Approximations of the main-series formulas
+  // with the game's own stats (incl. stat stages) and type effectiveness; abilities, items,
+  // weather and crits are ignored, so they are labelled as estimates.
+  // ---------------------------------------------------------------------------
+  const Stat = { HP: 0, ATK: 1, DEF: 2, SPATK: 3, SPDEF: 4, SPD: 5 };
+
+  function statOf(p, stat, opponent, move) {
+    return safe(() => p.getEffectiveStat(stat, opponent, move), null) ?? safe(() => p.getStat(stat), null);
+  }
+
+  /** {lo, hi} damage as a fraction of the target's max HP, or null if not a plain attack. */
+  function damageEstimate(user, move, target, spread = false) {
+    if (!move || move.category === 2 || !(move.power > 0)) {
+      return null;
+    }
+    const physical = move.category === 0;
+    const atk = statOf(user, physical ? Stat.ATK : Stat.SPATK, target, move);
+    const def = statOf(target, physical ? Stat.DEF : Stat.SPDEF, user, move);
+    const maxHp = safe(() => target.getMaxHp(), null);
+    const eff = safe(() => target.getMoveEffectiveness(user, move), null);
+    if (!atk || !def || !maxHp || eff === null) {
+      return null;
+    }
+    const mtype = safe(() => user.getMoveType(move), move.type);
+    const stab = safe(() => user.getTypes().includes(mtype), false) ? 1.5 : 1;
+    const base = Math.floor(Math.floor((Math.floor((2 * user.level) / 5 + 2) * move.power * atk) / def) / 50) + 2;
+    const mult = stab * eff * (spread ? 0.75 : 1) * (physical && STATUS[safe(() => user.status?.effect, 0)] === "BURN" ? 0.5 : 1);
+    return { lo: (base * 0.85 * mult) / maxHp, hi: (base * mult) / maxHp };
+  }
+
+  function damageText(user, move, target, spread = false) {
+    const est = damageEstimate(user, move, target, spread);
+    if (!est) {
+      return "";
+    }
+    if (est.hi === 0) {
+      return `no damage to ${target.name}`;
+    }
+    const left = safe(() => target.getHpRatio(), 1);
+    const hits = n => (n <= 1 ? "likely KO" : `KO in ~${n} hits`);
+    const best = Math.ceil(left / est.hi);
+    const worst = Math.ceil(left / est.lo);
+    const ko = best === worst ? hits(best) : best <= 1 ? "may KO, else 2 hits" : `KO in ~${best}-${worst} hits`;
+    const pct = x => Math.max(1, Math.round(x * 100));
+    return `est. ${pct(est.lo)}-${pct(est.hi)}% of ${target.name}'s max HP per hit, ${ko}`;
+  }
+
+  // Gen 6 capture formula (what PokeRogue's AttemptCapturePhase uses): three shake checks.
+  const BALL_MULT = [1, 1.5, 2, 3, Infinity];
+  function catchChance(target, ballIndex) {
+    const mult = BALL_MULT[ballIndex];
+    if (mult === Infinity) {
+      return 1;
+    }
+    const maxHp = safe(() => target.getMaxHp(), null);
+    const rate = safe(() => target.species.catchRate, null);
+    if (!maxHp || !rate) {
+      return null;
+    }
+    const st = STATUS[safe(() => target.status?.effect, 0)];
+    const statusMult = st === "SLEEP" || st === "FREEZE" ? 2.5 : ["POISON", "TOXIC", "PARALYSIS", "BURN"].includes(st) ? 1.5 : 1;
+    const m3 = 3 * maxHp;
+    const modified = Math.round((((m3 - 2 * target.hp) * rate * mult) / m3) * statusMult);
+    if (modified <= 0) {
+      return 0;
+    }
+    const shake = Math.min(1, Math.round(65536 / Math.pow(255 / modified, 0.1875)) / 65536);
+    return Math.pow(shake, 3);
+  }
+
   /** Legal commands for `user`. `turnWide` adds Poke Balls and Run, which end the whole turn. */
   function commandOptions(user, turnWide = true) {
     const s = scene();
@@ -519,10 +590,11 @@
           const t = field[bi];
           const side = bi >= 2 ? "enemy" : "ally";
           const x = m.category === "STATUS" ? null : safe(() => t.getMoveEffectiveness(user, pm.getMove()), null);
+          const dmg = side === "enemy" ? safe(() => damageText(user, pm.getMove(), t), "") : "";
           options.push(
             opt(
               `move:${i}@target:${bi}`,
-              `Use ${m.name} on ${t.name} (${side}${x === null ? "" : `, ${x}x`}) (${stats})`,
+              `Use ${m.name} on ${t.name} (${side}${x === null ? "" : `, ${x}x`}) (${stats}${dmg ? `; ${dmg}` : ""})`,
               { type: "fight", move: i, target: bi },
               { move: m, target: bi, target_name: t.name, target_side: side, target_effectiveness: x },
             ),
@@ -531,12 +603,17 @@
         return;
       }
       const eff = m.effectiveness ? Object.entries(m.effectiveness).map(([n, x]) => `${x}x vs ${n}`).join(", ") : "";
-      const hits =
-        mt?.multiple && targets.length > 1 ? `, hits ${targets.map(bi => field[bi].name).join(" and ")}` : "";
+      const spread = !!(mt?.multiple && targets.length > 1);
+      const hits = spread ? `, hits ${targets.map(bi => field[bi].name).join(" and ")}` : "";
+      const victims = spread ? targets.filter(bi => bi >= 2).map(bi => field[bi]) : enemies.slice(0, 1);
+      const dmg = victims
+        .map(t => safe(() => damageText(user, pm.getMove(), t, spread), ""))
+        .filter(Boolean)
+        .join("; ");
       options.push(
         opt(
           `move:${i}`,
-          `Use ${m.name} (${stats}${eff ? `, ${eff}` : ""}${hits})`,
+          `Use ${m.name} (${stats}${eff ? `, ${eff}` : ""}${hits}${dmg ? `; ${dmg}` : ""})`,
           { type: "fight", move: i, multiple: !!(mt?.multiple && targets.length > 1) },
           { move: m },
         ),
@@ -569,7 +646,9 @@
             safe(() => `BST ${e.species.baseTotal}`, ""),
             e.shiny ? "SHINY" : "",
           ].filter(Boolean).join(", ");
-          options.push(opt(`ball:${i}`, `Throw ${b} (${n} left) at ${e.name} (${info})`, { type: "ball", ball: i }));
+          const c = safe(() => catchChance(e, i), null);
+          const chance = c === null ? "" : safe(() => e.isBoss(), false) ? ", boss: may not be catchable yet" : `, ~${Math.round(c * 100)}% catch chance`;
+          options.push(opt(`ball:${i}`, `Throw ${b} (${n} left) at ${e.name} (${info}${chance})`, { type: "ball", ball: i }));
         }
       });
     }

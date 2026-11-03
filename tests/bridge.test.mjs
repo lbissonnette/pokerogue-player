@@ -853,3 +853,17 @@ test("reward screen previews upcoming special waves; gym waves stay unknown unti
   scene._phase = new CommandPhase(scene.getPlayerParty()[0]);
   assert.doesNotMatch(JSON.stringify(ctx.__prBot.getDecision()), /Coming up/);
 });
+
+test("attack options estimate damage and hits to KO; balls show a catch chance", () => {
+  const ctx = loadBridge();
+  const { scene, pika, enemy } = makeScene();
+  ctx.__prScene = scene;
+  pika.getEffectiveStat = stat => ({ 1: 20, 3: 30 })[stat];
+  enemy.getEffectiveStat = stat => ({ 2: 30, 4: 25 })[stat];
+  enemy.species.catchRate = 45;
+  const d = ctx.__prBot.getDecision();
+  const tb = d.options.find(o => o.id === "move:0");
+  assert.match(tb.label, /est\. 71-84% of Gyarados's max HP per hit, KO in ~2 hits/);
+  const ball = d.options.find(o => o.id === "ball:0");
+  assert.match(ball.label, /~20% catch chance/);
+});
