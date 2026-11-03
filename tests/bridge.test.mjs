@@ -733,3 +733,41 @@ test("full party after a catch: one decision to release a specific member, then 
   await ctx.__prBot.act(d.seq, "__auto__");
   assert.deepEqual(picked, ["yes", "yes"]);
 });
+
+test("doubles: both Pokemon's commands in one decision; the partner's is applied on its turn", async () => {
+  const ctx = loadBridge();
+  const { scene, phase, pika, enemy } = makeScene();
+  ctx.__prScene = scene;
+  const squirtle = scene.getPlayerParty()[1];
+  squirtle.isOnField = () => true;
+  squirtle.isActive = () => true;
+  const enemy2 = mon("Magikarp", { id: 129, onField: true, player: false, types: [10] });
+  scene.getEnemyField = () => [enemy, enemy2];
+  scene.getField = () => [pika, squirtle, enemy, enemy2];
+  scene.getPlayerField = () => [pika, squirtle];
+  scene.currentBattle.double = true;
+  ctx.__prGetMoveTargets = (_u, moveId) =>
+    moveId === 1 ? { targets: [2, 3], multiple: false } : { targets: [2, 3], multiple: true };
+
+  let d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "command");
+  assert.equal(d.partner.acting, "Squirtle");
+  const partnerIds = plain(d.partner.options.map(o => o.id));
+  assert.ok(partnerIds.includes("move:0"));
+  assert.ok(!partnerIds.some(id => id.startsWith("ball:") || id === "run"), "balls/run are first-slot only");
+  assert.equal((await ctx.__prBot.act(d.seq, "move:0@target:3+nope")).ok, false);
+  d = ctx.__prBot.getDecision();
+  assert.equal((await ctx.__prBot.act(d.seq, "move:0@target:3+move:0")).ok, true);
+  assert.deepEqual(plain(phase.calls), [[0, 0]]);
+
+  const phase2 = new CommandPhase(squirtle);
+  phase2.getFieldIndex = () => 1;
+  scene._phase = phase2;
+  d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "auto");
+  assert.match(d.planned, /^Squirtle: Use Surf/);
+  await ctx.__prBot.act(d.seq, "__auto__");
+  assert.deepEqual(plain(phase2.calls), [[0, 0]]);
+  // Plan is used once: the next look at this phase is a normal decision.
+  assert.equal(ctx.__prBot.getDecision().kind, "command");
+});

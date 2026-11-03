@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections import deque
@@ -26,6 +27,17 @@ class Policy(Protocol):
     async def choose(self, decision: dict) -> Choice: ...
 
 
+def option_label(decision: dict, option_id: str) -> str:
+    """Label for a chosen option; 'A+B' is a double-battle pair (first Pokemon + partner)."""
+    first, _, second = option_id.partition("+")
+    label = next((o["label"] for o in decision.get("options") or [] if o["id"] == first), first)
+    if second:
+        partner = decision.get("partner") or {}
+        other = next((o["label"] for o in partner.get("options") or [] if o["id"] == second), second)
+        label = f"{label} | {partner.get('acting', 'partner')}: {other}"
+    return label
+
+
 class RunMemory:
     """Short-lived memory the LLM sees on each decision."""
 
@@ -34,7 +46,7 @@ class RunMemory:
         self.history: deque[str] = deque(maxlen=max_history)
 
     def record(self, decision: dict, choice: Choice) -> None:
-        label = next((o["label"] for o in decision.get("options", []) if o["id"] == choice.option_id), "?")
+        label = option_label(decision, choice.option_id)
         wave = (decision.get("state") or {}).get("wave")
         self.history.append(f"wave {wave} {decision.get('kind')}: {label}")
         if choice.note:
@@ -204,7 +216,8 @@ class LLMPolicy:
     async def choose(self, decision: dict) -> Choice:
         options = decision.get("options") or []
         valid = {o["id"] for o in options}
-        if len(options) == 1:
+        partner_valid = {o["id"] for o in (decision.get("partner") or {}).get("options") or []}
+        if len(options) == 1 and not partner_valid:
             return Choice(options[0]["id"], "only legal option", source="only")
 
         messages = build_messages(decision, list(self.memory.notes), list(self.memory.history))
@@ -216,15 +229,29 @@ class LLMPolicy:
                 log.warning("LLM call failed (attempt %d): %s", attempt + 1, e)
                 continue
             action = str(out.get("action", "")).strip()
-            if action in valid:
-                return Choice(action, str(out.get("reason", ""))[:300], str(out.get("note", "") or ""), "llm")
-            log.warning("LLM picked invalid option %r", action)
+            reason, note = str(out.get("reason", ""))[:300], str(out.get("note", "") or "")
+            problem = None
+            if action not in valid:
+                problem = f"'{action}' is not a valid option id. Choose one of: {', '.join(sorted(valid))}."
+            elif partner_valid:
+                second = str(out.get("partner_action", "")).strip()
+                if action.startswith(("ball:", "run")):
+                    return Choice(action, reason, note, "llm")  # ends the turn; partner is moot
+                if second not in partner_valid:
+                    problem = (
+                        f"'{second}' is not a valid partner_action. Choose one of: "
+                        f"{', '.join(sorted(partner_valid))}."
+                    )
+                elif second.startswith("switch:") and second == action:
+                    problem = "Both Pokemon can't switch to the same party member. Pick a different partner_action."
+                else:
+                    return Choice(f"{action}+{second}", reason, note, "llm")
+            else:
+                return Choice(action, reason, note, "llm")
+            log.warning("LLM answer rejected: %s", problem)
             messages = messages + [
-                {"role": "assistant", "content": str(out)},
-                {
-                    "role": "user",
-                    "content": f"'{action}' is not a valid option id. Choose one of: {', '.join(sorted(valid))}.",
-                },
+                {"role": "assistant", "content": json.dumps(out)},
+                {"role": "user", "content": problem},
             ]
         choice = await self.fallback.choose(decision)
         choice.reason = f"[fallback] {choice.reason}"

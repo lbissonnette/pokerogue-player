@@ -460,16 +460,13 @@
     return parts.filter(Boolean).length ? `; ${parts.filter(Boolean).join("; ")}` : "";
   }
 
-  function commandDecision() {
+  /** Legal commands for `user`. `turnWide` adds Poke Balls and Run, which end the whole turn. */
+  function commandOptions(user, turnWide = true) {
     const s = scene();
-    const phase = currentPhase();
-    const fieldIndex = phase.getFieldIndex();
-    const user = phase.getPokemon();
     const enemies = s.getEnemyField().filter(e => e.isActive(true));
     const options = [];
     const moveset = user.getMoveset().filter(Boolean);
     const anyUsable = moveset.some(pm => safe(() => pm.isUsable(user, false, true)[0], true));
-    BOT.pendingMoveTarget = null;
     const field = s.getField();
     const getTargets = window.__prGetMoveTargets;
     moveset.forEach((pm, i) => {
@@ -526,6 +523,9 @@
     });
     const battle = s.currentBattle;
     const wild = battle.battleType === 0;
+    if (!turnWide) {
+      return options;
+    }
     if (wild && enemies.length === 1) {
       BALLS.forEach((b, i) => {
         const n = safe(() => s.pokeballCounts[i], 0);
@@ -537,12 +537,49 @@
     if (wild) {
       options.push(opt("run", "Run away", { type: "run" }));
     }
-    return {
+    return options;
+  }
+
+  function commandDecision() {
+    const s = scene();
+    const phase = currentPhase();
+    const fieldIndex = phase.getFieldIndex();
+    const user = phase.getPokemon();
+    BOT.pendingMoveTarget = null;
+    const options = commandOptions(user, true);
+    const battle = s.currentBattle;
+    const turn = safe(() => battle.turn);
+    const wave = safe(() => battle.waveIndex);
+
+    // Second Pokemon of a double battle: its command was already chosen together with the
+    // first one's. Use it if it is still legal; otherwise decide it on its own.
+    const plan = BOT.partnerPlan;
+    BOT.partnerPlan = null;
+    if (plan && fieldIndex === 1 && plan.turn === turn && plan.wave === wave) {
+      const o = options.find(x => x.id === plan.id);
+      if (o) {
+        return { kind: "auto", act: o.act, planned: `${user.name}: ${o.label}` };
+      }
+    }
+
+    const out = {
       kind: "command",
       prompt: `What should ${user.name} do? (field slot ${fieldIndex})`,
       acting: user.name,
       options,
     };
+    // First Pokemon of a double battle: offer the partner's commands too, so both are
+    // decided together (focus one enemy or split up). Balls and Run are first-slot only,
+    // since they use up the whole turn.
+    const partner = fieldIndex === 0 && battle?.double
+      ? safe(() => s.getPlayerField().find((p, i) => i === 1 && p && p.isActive(true)), null)
+      : null;
+    if (partner) {
+      out.partner = { acting: partner.name, options: commandOptions(partner, false) };
+      out.prompt =
+        `Double battle: choose what ${user.name} (left) and ${partner.name} (right) do this turn, together.`;
+    }
+    return out;
   }
 
   function targetDecision() {
@@ -1191,7 +1228,15 @@
     if (optionId === "__auto__") {
       act = d.act;
     } else {
-      act = d.options?.find(o => o.id === optionId)?.act;
+      const [first, second] = String(optionId).split("+");
+      act = d.options?.find(o => o.id === first)?.act;
+      if (act && second && d.kind === "command") {
+        if (!d.partner?.options?.some(o => o.id === second)) {
+          return { ok: false, error: `unknown partner option ${second}` };
+        }
+        const battle = scene().currentBattle;
+        BOT.partnerPlan = { id: second, turn: battle?.turn, wave: battle?.waveIndex };
+      }
     }
     if (!act) {
       return { ok: false, error: `unknown option ${optionId}` };

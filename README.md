@@ -85,7 +85,7 @@ moves that have been used. `--reveal-hidden` gives it exact HP, natures and full
 
 | Situation | Who decides |
 |---|---|
-| Battle turn: move, switch, Poké Ball, run | LLM (rules fallback) |
+| Battle turn: move, switch, Poké Ball, run. In doubles both Pokémon are planned in one call (`action` + `partner_action`) | LLM (rules fallback) |
 | Target selection in double battles: offered as "move on target" options in the battle turn, so move and target are one decision | LLM |
 | Replacement after a faint | LLM |
 | Reward / shop / reroll / skip. Items used on a Pokémon are offered as "item on Pokémon" pairs (only targets the item would affect), so the item and target are one decision | LLM |

@@ -57,7 +57,24 @@ def build_messages(decision: dict, notes: list[str], history: list[str]) -> list
         parts.append("Your notes so far:\n" + "\n".join(f"- {n}" for n in notes))
     if history:
         parts.append("Your recent decisions:\n" + "\n".join(f"- {h}" for h in history))
-    parts.append("Options:\n" + "\n".join(f"{o['id']}: {o['label']}" for o in options))
+    partner = decision.get("partner")
+    if partner:
+        parts.append(
+            f"Options for {decision.get('acting')} (\"action\"):\n"
+            + "\n".join(f"{o['id']}: {o['label']}" for o in options)
+        )
+        parts.append(
+            f"Options for {partner['acting']} (\"partner_action\"):\n"
+            + "\n".join(f"{o['id']}: {o['label']}" for o in partner["options"])
+        )
+        parts.append(
+            "Plan the turn for both Pokemon together: focus one enemy (e.g. to KO it before it acts) "
+            "or split up, and don't both switch to the same Pokemon. If the first action throws a "
+            "ball or runs, the partner action is ignored. Reply with "
+            '{"action": "<id>", "partner_action": "<id>", "reason": "...", "note": "..."}.'
+        )
+    else:
+        parts.append("Options:\n" + "\n".join(f"{o['id']}: {o['label']}" for o in options))
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": "\n\n".join(parts)},

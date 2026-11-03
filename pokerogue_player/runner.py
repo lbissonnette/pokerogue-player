@@ -13,7 +13,7 @@ from pathlib import Path
 from .config import Config
 from .game import Game
 from .llm import OpenRouterClient
-from .policy import LLMPolicy, Policy, RulePolicy, RunMemory
+from .policy import LLMPolicy, Policy, RulePolicy, RunMemory, option_label
 from .starters import choose_team
 
 log = logging.getLogger(__name__)
@@ -93,6 +93,8 @@ class Runner:
             await asyncio.sleep(2)
             return
         if kind in AUTO_KINDS:
+            if d.get("planned"):
+                log.info("command (planned with partner) -> %s", d["planned"])
             await self._act(d, "__auto__")
             return
         if kind == "starter_select":
@@ -147,7 +149,7 @@ class Runner:
         result = await self._act(d, choice.option_id)
         self.decisions += 1
         self.memory.record(d, choice)
-        label = next((o["label"] for o in options if o["id"] == choice.option_id), choice.option_id)
+        label = option_label(d, choice.option_id)
         state = d.get("state") or {}
         log.info("[wave %s] %s -> %s (%s: %s)", state.get("wave"), kind, label, choice.source, choice.reason)
         self._write(

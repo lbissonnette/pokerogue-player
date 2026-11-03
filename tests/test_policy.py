@@ -208,3 +208,45 @@ async def test_rule_command_with_targets_picks_best_enemy_never_ally():
 async def test_rule_catch_full_keeps_the_team():
     d = {"kind": "catch_full", "options": [{"id": "release:0", "label": "x"}, {"id": "decline", "label": "y"}]}
     assert (await RulePolicy().choose(d)).option_id == "decline"
+
+
+PAIR = {
+    "kind": "command",
+    "acting": "Pika",
+    "state": {"party": []},
+    "options": [
+        {"id": "move:0@target:2", "label": "Use Thunderbolt on Gyarados"},
+        {"id": "switch:2", "label": "Switch to Mew"},
+        {"id": "run", "label": "Run away"},
+    ],
+    "partner": {
+        "acting": "Squirtle",
+        "options": [{"id": "move:0@target:2", "label": "Use Surf on Gyarados"}, {"id": "switch:2", "label": "Switch to Mew"}],
+    },
+}
+
+
+async def test_llm_double_battle_pair_in_one_call():
+    from pokerogue_player.policy import option_label
+
+    client = FakeClient([
+        {"action": "switch:2", "partner_action": "switch:2"},
+        {"action": "move:0@target:2", "partner_action": "nope"},
+        {"action": "move:0@target:2", "partner_action": "move:0@target:2", "reason": "focus Gyarados"},
+    ])
+    cfg = Config(api_key="x")
+    cfg.models = {}
+    choice = await LLMPolicy(client, cfg, RunMemory()).choose(PAIR)
+    # One retry per call budget is 2, so the third answer isn't reached: falls back to rules.
+    assert len(client.calls) == 2
+    assert "same party member" in client.calls[1][1][-1]["content"]
+    assert "partner_action" in client.calls[0][1][1]["content"]
+    assert "Options for Squirtle" in client.calls[0][1][1]["content"]
+
+    client = FakeClient([{"action": "move:0@target:2", "partner_action": "move:0@target:2"}])
+    choice = await LLMPolicy(client, cfg, RunMemory()).choose(PAIR)
+    assert choice.option_id == "move:0@target:2+move:0@target:2"
+    assert option_label(PAIR, choice.option_id) == "Use Thunderbolt on Gyarados | Squirtle: Use Surf on Gyarados"
+
+    client = FakeClient([{"action": "run", "partner_action": "whatever"}])
+    assert (await LLMPolicy(client, cfg, RunMemory()).choose(PAIR)).option_id == "run"
