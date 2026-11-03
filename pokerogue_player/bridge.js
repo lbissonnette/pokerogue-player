@@ -277,6 +277,7 @@
       id: p.id,
       name: p.name,
       species_id: safe(() => p.species.speciesId),
+      bst: safe(() => p.species.baseTotal),
       level: p.level,
       types: safe(() => p.getTypes().map(typeName), []),
       ability: safe(() => p.getAbility().name),
@@ -305,6 +306,7 @@
     const out = {
       name: e.name,
       species_id: safe(() => e.species.speciesId),
+      bst: safe(() => e.species.baseTotal),
       level: e.level,
       types: safe(() => e.getTypes().map(typeName), []),
       ability: safe(() => e.getAbility().name),
@@ -530,7 +532,13 @@
       BALLS.forEach((b, i) => {
         const n = safe(() => s.pokeballCounts[i], 0);
         if (n > 0) {
-          options.push(opt(`ball:${i}`, `Throw ${b} (${n} left) at ${enemies[0].name}`, { type: "ball", ball: i }));
+          const e = enemies[0];
+          const info = [
+            safe(() => e.getTypes().map(typeName).join("/"), ""),
+            safe(() => `BST ${e.species.baseTotal}`, ""),
+            e.shiny ? "SHINY" : "",
+          ].filter(Boolean).join(", ");
+          options.push(opt(`ball:${i}`, `Throw ${b} (${n} left) at ${e.name} (${info})`, { type: "ball", ball: i }));
         }
       });
     }

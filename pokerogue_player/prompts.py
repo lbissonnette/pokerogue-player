@@ -18,8 +18,11 @@ computes for that move against that target (0 = immune, 0.5 = resisted, 2/4 = su
 the switch-in clearly wins the matchup: use the "best move ... Nx" and "takes Nx" numbers in \
 the switch options (computed by the game), not your own type chart. Never switch back to a \
 Pokemon you just switched out of unless something changed.
-- Catch Pokemon that fill a gap in the team (types, roles) or that are rare/shiny/not yet caught. \
-Weaken them first if it's safe, and don't waste good balls on weak catches.
+- Catching: only throw a ball at a Pokemon that is shiny, or one you actually intend to put \
+in the team (it fills a type gap or will clearly be stronger than a current member). Don't \
+catch just because it's a new dex entry, it's weak, or you have balls to spare; otherwise \
+just defeat it. Weaken a catch target first if it's safe, and use better balls on better \
+targets.
 - Full party after a catch: only release a party member if the new Pokemon is clearly better \
 for the run (stronger species/evolution line, BST, needed type, shiny). Never release a Pokemon \
 the team relies on, or one holding valuable items.
