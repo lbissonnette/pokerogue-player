@@ -74,16 +74,41 @@ Reply with a JSON object only:
 """
 
 
-def build_starter_messages(candidates: list[dict], budget: int, error: str | None = None) -> list[dict]:
-    lines = [
+def _starter_line(c: dict) -> str:
+    return (
         f"{c['id']}: {c['name']} [{'/'.join(c['types'])}] cost {c['cost']} BST {c['bst']}"
         + (" pokerus" if c.get("pokerus") else "")
-        for c in candidates
-    ]
-    content = f"Budget: {budget}\n\nAvailable starters (id: name [types] cost BST):\n" + "\n".join(lines)
-    if error:
-        content += f"\n\nYour previous answer was invalid: {error}. Try again."
+    )
+
+
+def build_starter_messages(candidates: list[dict], budget: int) -> list[dict]:
+    # Pokerus first (one is required), then strongest first, so the useful choices are on top.
+    ordered = sorted(candidates, key=lambda c: (not c.get("pokerus"), -c["bst"]))
+    content = (
+        f"Budget: {budget}\n\nAvailable starters (id: name [types] cost BST):\n"
+        + "\n".join(_starter_line(c) for c in ordered)
+    )
     return [
         {"role": "system", "content": STARTER_SYSTEM_PROMPT},
         {"role": "user", "content": content},
     ]
+
+
+def starter_feedback(ids: list | None, candidates: list[dict], budget: int, error: str,
+                     rejected: list[list[int]]) -> str:
+    """Tell the model what it picked, why it's rejected, and which teams not to repeat."""
+    by_id = {c["id"]: c for c in candidates}
+    picked = [by_id[i] for i in ids or [] if i in by_id]
+    lines = ["Your team was rejected."]
+    if picked:
+        total = sum(c["cost"] for c in picked)
+        lines.append("You picked:\n" + "\n".join(f"- {_starter_line(c)}" for c in picked))
+        lines.append(f"Total cost {total} of {budget} ({budget - total} left).")
+    lines.append(f"Problem: {error}.")
+    if len(rejected) > 1:
+        lines.append("Already rejected, do not repeat: " + "; ".join(str(r) for r in rejected))
+    lines.append(
+        "Change the team to fix the problem (replace Pokemon if needed), check every rule again, "
+        'and reply with the JSON object {"starters": [...], "reason": "..."}.'
+    )
+    return "\n".join(lines)

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from .llm import LLMError
-from .prompts import build_starter_messages
+from .prompts import build_starter_messages, starter_feedback
 
 log = logging.getLogger(__name__)
 
@@ -105,11 +106,13 @@ async def choose_team(candidates: list[dict], budget: int, client=None, model: s
     """Ask the LLM for a team (three tries, each told what was wrong), falling back to the
     heuristic."""
     if client is not None and candidates:
-        error = None
+        # One conversation: each retry shows the model its own answer and what was wrong
+        # with it, so it fixes the team instead of repeating it.
+        messages = build_starter_messages(candidates, budget)
+        rejected: list[list[int]] = []
         for _ in range(3):
             try:
-                out = await client.chat_json(model, build_starter_messages(candidates, budget, error),
-                                             temperature=temperature)
+                out = await client.chat_json(model, messages, temperature=temperature)
             except (LLMError, Exception) as e:
                 log.warning("starter LLM call failed: %s", e)
                 continue
@@ -119,5 +122,10 @@ async def choose_team(candidates: list[dict], budget: int, client=None, model: s
             error = validate_team(ids, candidates, budget)
             if error is None:
                 return ids, str(out.get("reason", ""))[:300]
-            log.warning("LLM starter team invalid: %s", error)
+            log.warning("LLM starter team %s invalid: %s", ids, error)
+            rejected.append(ids if isinstance(ids, list) else [])
+            messages = messages + [
+                {"role": "assistant", "content": json.dumps(out)},
+                {"role": "user", "content": starter_feedback(ids, candidates, budget, error, rejected)},
+            ]
     return heuristic_team(candidates, budget), "[fallback] highest total base stats within budget"

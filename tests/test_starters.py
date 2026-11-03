@@ -42,7 +42,7 @@ async def test_llm_team_with_retry_on_invalid():
     client = FakeClient([{"starters": [147, 1, 4]}, {"starters": [147, 7, 10], "reason": "dragon + water"}])
     ids, reason = await choose_team(CANDS, 10, client, "m")
     assert ids == [147, 7, 10] and reason == "dragon + water"
-    assert "exceeds budget" in client.calls[1][1]["content"]
+    assert "exceeds budget" in client.calls[1][-1]["content"]
 
 
 async def test_llm_failure_falls_back():
@@ -71,7 +71,7 @@ def test_pokerus_not_required_when_unaffordable():
 async def test_llm_is_retried_when_it_skips_pokerus():
     client = FakeClient([{"starters": [1, 4, 7]}, {"starters": [147, 1, 10]}])
     ids, _ = await choose_team(PKRS, 10, client, "m")
-    assert ids == [147, 1, 10] and "pokerus" in client.calls[1][1]["content"]
+    assert ids == [147, 1, 10] and "pokerus" in client.calls[1][-1]["content"]
 
 
 def test_shared_types_are_rejected_and_avoided_by_the_heuristic():
@@ -87,4 +87,17 @@ async def test_llm_gets_three_tries_with_the_reason():
     client = FakeClient([{"starters": [7]}, {"starters": [1, 4]}, {"starters": [1, 4, 7, 10]}])
     ids, _ = await choose_team(CANDS, 10, client, "m")
     assert ids == [1, 4, 7, 10]
-    assert "unspent" in client.calls[1][1]["content"] and "unspent" in client.calls[2][1]["content"]
+    assert "unspent" in client.calls[1][-1]["content"] and "unspent" in client.calls[2][-1]["content"]
+
+
+async def test_retry_shows_the_model_its_own_team_and_past_rejections():
+    cands = CANDS + [{"id": 393, "name": "Piplup", "types": ["WATER"], "cost": 3, "bst": 314}]
+    client = FakeClient([{"starters": [7, 393]}, {"starters": [7, 393]}, {"starters": [1, 4, 7, 10]}])
+    ids, _ = await choose_team(cands, 10, client, "m")
+    assert ids == [1, 4, 7, 10]
+    second = client.calls[1]
+    assert second[-2] == {"role": "assistant", "content": '{"starters": [7, 393]}'}
+    fb = second[-1]["content"]
+    assert "Squirtle [WATER] cost 3" in fb and "Piplup [WATER] cost 3" in fb
+    assert "Total cost 6 of 10 (4 left)" in fb and "both WATER" in fb
+    assert "do not repeat: [7, 393]; [7, 393]" in client.calls[2][-1]["content"]
