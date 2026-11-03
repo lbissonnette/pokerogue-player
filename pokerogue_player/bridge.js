@@ -59,7 +59,8 @@
    * Labels the bot must never select, anywhere. Save data is the user's; nothing that
    * deletes, overwrites or erases it is ever a legal option.
    */
-  const DANGEROUS_LABEL = /delete|overwrite|erase|wipe|clear data|reset/i;
+  // Whole words only, so move names like "Fury Swipes" don't match "wipe".
+  const DANGEROUS_LABEL = /\b(delete|overwrite|erase|wipe|clear data|reset)\b/i;
   const Command = { FIGHT: 0, BALL: 1, POKEMON: 2, RUN: 3, TERA: 4 };
   const Button = { UP: 0, DOWN: 1, LEFT: 2, RIGHT: 3, SUBMIT: 4, ACTION: 5, CANCEL: 6 };
   const PartyOption = {

@@ -20,7 +20,10 @@ log = logging.getLogger(__name__)
 
 PASSIVE_KINDS = {"loading", "busy", "wait"}
 # Never offered to the policy, whatever the bridge sends (the bridge filters these too).
-DANGEROUS_LABEL = re.compile(r"delete|overwrite|erase|wipe|clear data|reset", re.I)
+# Whole words only: "Fury Swipes" must not match "wipe". Only applied to menu-like screens,
+# never to move or item names.
+DANGEROUS_LABEL = re.compile(r"\b(delete|overwrite|erase|wipe|clear data|reset)\b", re.I)
+MENU_KINDS = {"menu", "confirm", "title", "biome", "mystery"}
 AUTO_KINDS = {"advance", "auto"}
 
 
@@ -110,10 +113,13 @@ class Runner:
             return
         self._title_seen = 0
 
-        options = [o for o in (d.get("options") or []) if not DANGEROUS_LABEL.search(o.get("label", ""))]
+        options = d.get("options") or []
+        if kind in MENU_KINDS:
+            options = [o for o in options if not DANGEROUS_LABEL.search(o.get("label", ""))]
         d["options"] = options
         if not options:
-            log.debug("no safe options for %s", kind)
+            log.warning("no safe options for %s in %s/%s", kind, d.get("phase"), d.get("handler"))
+            await asyncio.sleep(1)
             return
 
         if kind == "command" and not any(o["id"].startswith("move:") for o in options):

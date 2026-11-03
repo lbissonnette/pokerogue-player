@@ -171,3 +171,12 @@ async def test_command_without_moves_stops(tmp_path):
     with pytest.raises(StopRun):
         await runner.step()
     assert game.acts == []
+
+
+def test_dangerous_label_matches_whole_words_only():
+    from pokerogue_player.runner import DANGEROUS_LABEL
+
+    assert DANGEROUS_LABEL.search("Delete")
+    assert DANGEROUS_LABEL.search("Overwrite this save?")
+    assert not DANGEROUS_LABEL.search("Forget Scratch to learn Fury Swipes")
+    assert not DANGEROUS_LABEL.search("Don't learn Fury Swipes")
