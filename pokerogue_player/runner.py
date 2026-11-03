@@ -132,8 +132,10 @@ class Runner:
         # (same screen, wave, turn and options), it isn't working; stop offering it.
         state = d.get("state") or {}
         battle = state.get("battle") or {}
+        # The prompt is part of it: two different learn-move questions in one wave (different
+        # Pokemon or moves) have identical option ids and must not share failure counts.
         sig = (kind, d.get("phase"), state.get("wave"), battle.get("turn"),
-               tuple(o["id"] for o in options), d.get("acting"))
+               tuple(o["id"] for o in options), d.get("acting"), d.get("prompt"))
         if sig != self._repeat_sig:
             self._repeat_sig, self._repeat_counts = sig, {}
         blocked = {oid for oid, n in self._repeat_counts.items() if n >= 2}

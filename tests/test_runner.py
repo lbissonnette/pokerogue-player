@@ -180,3 +180,15 @@ def test_dangerous_label_matches_whole_words_only():
     assert DANGEROUS_LABEL.search("Overwrite this save?")
     assert not DANGEROUS_LABEL.search("Forget Scratch to learn Fury Swipes")
     assert not DANGEROUS_LABEL.search("Don't learn Fury Swipes")
+
+
+async def test_separate_learn_move_questions_dont_share_failure_counts(tmp_path):
+    def d(seq, who):
+        return {"kind": "learn_move", "seq": seq, "phase": "LearnMovePhase", "state": {"wave": 4},
+                "prompt": f"{who} wants to learn a move", "new_move": {"power": 0},
+                "options": [{"id": f"forget:{i}", "label": "x", "move": {"power": 50}} for i in range(4)]
+                + [{"id": "keep", "label": "Don't learn"}]}
+    runner, game = make_runner(tmp_path, [d(1, "A"), d(2, "B"), d(3, "C")])
+    for _ in range(3):
+        await runner.step()
+    assert [a[1] for a in game.acts] == ["keep", "keep", "keep"]
