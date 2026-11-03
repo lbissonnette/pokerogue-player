@@ -913,3 +913,13 @@ test("ball options and party show the fully evolved form; wild prompts show part
   const ball = d.options.find(o => o.id === "ball:0");
   assert.match(ball.label, /BST 200, evolves into Gyarados \(WATER\/FLYING, BST 540\)/);
 });
+
+test("state shows the level cap and who is at it", () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  scene.getMaxExpLevel = () => 10;
+  const st = ctx.__prBot.getDecision().state;
+  assert.equal(st.level_cap, 10);
+  assert.equal(st.party[0].at_level_cap, true); // fake party is Lv10
+});

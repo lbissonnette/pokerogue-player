@@ -35,6 +35,10 @@ for better targets.
 for the run by the same test: higher fully evolved BST than that member's fully evolved form, \
 or type coverage the team lacks (or shiny). Release the weakest member by that measure. Never release a Pokemon \
 the team relies on, or one holding valuable items.
+- Level cap: "level_cap" is the highest level the game lets battle EXP raise a Pokemon to \
+right now; it rises every 10 waves. Pokemon marked "at_level_cap" gain little or no battle EXP, \
+so give EXP items and Rare Candies to Pokemon below the cap, and send under-cap Pokemon into \
+easy battles so the whole team keeps up.
 - Rewards: if a party member has fainted, take a revive whenever one is offered (reward or \
 shop) and give it to the fainted Pokemon. Otherwise prioritize healing when the team is hurt, then items that permanently strengthen the \
 team (EXP items, stat boosters, good held items), then everything else. On the reward screen, \

@@ -356,11 +356,20 @@
     // screen while handing out a reward item is not.
     const inBattle = BATTLE_KINDS.has(kind) || (kind === "party" && !d.item);
     const party = s.getPlayerParty();
+    // The game's own level cap for the current wave (it rises every 10 waves).
+    const cap = safe(() => s.getMaxExpLevel(), null);
     const out = {
       wave: safe(() => battle.waveIndex),
       biome: safe(() => BIOMES[s.arena.biomeId] ?? s.arena.biomeId),
       money: s.money,
-      party: party.map((p, i) => playerPokemon(p, i, inBattle)),
+      level_cap: cap ?? undefined,
+      party: party.map((p, i) => {
+        const m = playerPokemon(p, i, inBattle);
+        if (cap && p.level >= cap) {
+          m.at_level_cap = true;
+        }
+        return m;
+      }),
     };
     if (inBattle) {
       const enemiesOnField = safe(() => s.getEnemyField().filter(e => e.isActive(true)), []);
@@ -1028,6 +1037,7 @@
       prompt:
         `Choose a reward. Money: ${s.money}. Items used on a Pokemon are listed once per Pokemon ` +
         "they would have an effect on; picking one also picks the target." +
+        (safe(() => s.getMaxExpLevel(), null) ? ` Level cap this wave: ${s.getMaxExpLevel()}.` : "") +
         (ahead.length ? `\nComing up: ${ahead.join("; ")}.` : ""),
       options,
     };
