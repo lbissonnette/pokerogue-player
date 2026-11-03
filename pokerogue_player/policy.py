@@ -161,6 +161,14 @@ class RulePolicy:
             return Choice(weakest["id"], "new move is stronger than the weakest current move")
         return Choice("keep", "current moves are at least as good")
 
+    def _party_option(self, options, decision, state):
+        # PP restore on one move: the move with the least PP left.
+        moves = [o for o in options if o.get("max_pp")]
+        if moves:
+            low = min(moves, key=lambda o: (o.get("pp") or 0) / max(1, o["max_pp"]))
+            return Choice(low["id"], "move with the least PP left")
+        return None
+
     def _catch_full(self, options, decision, state):
         # Releasing is permanent; without judgement, keep the party as it is.
         keep = next((o for o in options if o["id"] == "decline"), None)

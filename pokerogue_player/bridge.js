@@ -734,17 +734,40 @@
     if (h.optionsMode) {
       // We're inside a slot's option menu (e.g. which move to apply an Ether to).
       const p = party[h.cursor];
+      const item = phase === "SelectModifierPhase" ? (BOT.pendingItem ?? null) : null;
+      // An Ether-style item restores one move's PP; the game refuses a move that is full.
+      const restoresPp = !!item && /ether|elixir|leppa/i.test(item);
       const options = h.options
         .map((o, idx) => ({ o, idx }))
         .filter(({ o }) => !PARTY_NOISE.has(o))
         .map(({ o, idx }) => {
           let label = PARTY_OPTION_NAMES[o] ?? `OPTION_${o}`;
+          let extra = {};
           if (o >= PartyOption.MOVE_1 && o <= PartyOption.MOVE_4) {
-            label = `Move: ${safe(() => p.getMoveset()[o - PartyOption.MOVE_1].getName(), label)}`;
+            const pm = safe(() => p.getMoveset()[o - PartyOption.MOVE_1]);
+            const m = pm ? safe(() => moveInfo(p, pm, null), null) : null;
+            if (m) {
+              if (restoresPp && m.pp !== null && m.pp >= m.max_pp) {
+                return null;
+              }
+              label = `Move: ${m.name} (${m.type} ${m.category}, pow ${m.power}, PP ${m.pp ?? "-"}/${m.max_pp ?? "-"})`;
+              extra = { pp: m.pp, max_pp: m.max_pp };
+            } else {
+              label = `Move: ${safe(() => pm.getName(), label)}`;
+            }
           }
-          return opt(`popt:${idx}`, label, { type: "party_option", index: idx });
-        });
-      return { kind: "party_option", prompt: `Choose an option for ${p?.name}.`, options };
+          return opt(`popt:${idx}`, label, { type: "party_option", index: idx }, extra);
+        })
+        .filter(Boolean);
+      return {
+        kind: "party_option",
+        prompt: item
+          ? `Choose which of ${p?.name}'s moves gets ${item}.` +
+            (restoresPp ? " It restores PP: pick the useful move with the least PP left." : "")
+          : `Choose an option for ${p?.name}.`,
+        item,
+        options,
+      };
     }
     const mode = h.partyUiMode;
     if (BOT.releasePlan?.stage === "party" && phase === "AttemptCapturePhase" && party[BOT.releasePlan.slot]) {
@@ -930,7 +953,8 @@
       row.forEach((o, c) => {
         const t = o.modifierTypeOption.type;
         const cost = o.modifierTypeOption.cost;
-        if (cost <= s.money) {
+        // Single-move PP restores are poor value; only Elixirs are worth buying.
+        if (cost <= s.money && !/^(max )?ether$/i.test(String(t.name).trim())) {
           options.push(...itemOptions(`shop:${r}:${c}`, "Buy", t, { row: rowCursor, col: c }, ` for ${cost}`));
         }
       });

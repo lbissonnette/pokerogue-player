@@ -250,3 +250,12 @@ async def test_llm_double_battle_pair_in_one_call():
 
     client = FakeClient([{"action": "run", "partner_action": "whatever"}])
     assert (await LLMPolicy(client, cfg, RunMemory()).choose(PAIR)).option_id == "run"
+
+
+async def test_rule_party_option_restores_lowest_pp_move():
+    d = {"kind": "party_option", "options": [
+        {"id": "popt:0", "label": "a", "pp": 15, "max_pp": 15},
+        {"id": "popt:1", "label": "b", "pp": 2, "max_pp": 15},
+        {"id": "popt:2", "label": "c", "pp": 10, "max_pp": 40},
+    ]}
+    assert (await RulePolicy().choose(d)).option_id == "popt:1"

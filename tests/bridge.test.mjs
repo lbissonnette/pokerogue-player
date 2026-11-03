@@ -243,7 +243,7 @@ test("modifier decision maps rewards, shop rows and reroll to callback coordinat
     awaitingActionInput = true;
     onActionInput = cb;
     options = [opt("Potion"), opt("Rare Candy")];
-    shopOptionsRows = [[opt("Super Potion", 300), opt("Revive", 900)], [opt("Ether", 400)]];
+    shopOptionsRows = [[opt("Super Potion", 300), opt("Revive", 900)], [opt("Elixir", 400)]];
     rerollCost = 250;
   }
   scene.ui._handler = new ModifierSelectUiHandler();
@@ -866,4 +866,35 @@ test("attack options estimate damage and hits to KO; balls show a catch chance",
   assert.match(tb.label, /est\. 71-84% of Gyarados's max HP per hit, KO in ~2 hits/);
   const ball = d.options.find(o => o.id === "ball:0");
   assert.match(ball.label, /~20% catch chance/);
+});
+
+test("Ether move picker shows PP and hides full moves; Ethers aren't sold", async () => {
+  const ctx = loadBridge();
+  const { scene } = makeScene();
+  ctx.__prScene = scene;
+  const opt = (name, cost) => ({ modifierTypeOption: { cost, type: { name, getDescription: () => "" } } });
+  class ModifierSelectUiHandler {
+    awaitingActionInput = true;
+    onActionInput = () => true;
+    options = [opt("Rare Candy", 0)];
+    shopOptionsRows = [[opt("Ether", 100), opt("Max Ether", 200), opt("Elixir", 300)]];
+    rerollCost = -1;
+  }
+  scene.ui._handler = new ModifierSelectUiHandler();
+  scene._phase = { phaseName: "SelectModifierPhase" };
+  let d = ctx.__prBot.getDecision();
+  assert.deepEqual(plain(d.options.map(o => o.id)), ["reward:0", "shop:0:2"]);
+
+  ctx.__prBot.pendingItem = "Ether";
+  // Pikachu: Thunderbolt full, Quick Attack full, Growl 0/40.
+  class PartyUiHandler {
+    optionsMode = true;
+    cursor = 0;
+    options = [3000, 3001, 3002, -1];
+  }
+  scene.ui._handler = new PartyUiHandler();
+  d = ctx.__prBot.getDecision();
+  assert.equal(d.kind, "party_option");
+  assert.deepEqual(plain(d.options.map(o => o.label)), ["Move: Growl (NORMAL STATUS, pow -1, PP 0/40)"]);
+  assert.match(d.prompt, /least PP left/);
 });
