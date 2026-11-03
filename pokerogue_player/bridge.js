@@ -653,10 +653,12 @@
           return;
         }
       }
+      const sendOut = phase === "SwitchPhase" || mode === 1;
+      const vs = sendOut ? safe(() => matchup(p, s.getEnemyField().filter(e => e.isActive(true))), "") : "";
       options.push(
         opt(
           `slot:${i}`,
-          `${p.name} (Lv${p.level}, ${p.hp}/${p.getMaxHp()} HP${p.isFainted() ? ", fainted" : ""})`,
+          `${p.name} (Lv${p.level}, ${p.hp}/${p.getMaxHp()} HP${p.isFainted() ? ", fainted" : ""}${vs})`,
           { type: "party_slot", slot: i },
         ),
       );
@@ -672,7 +674,7 @@
         ? `Choose which party member gets ${item}.`
         :
         phase === "SwitchPhase"
-          ? "Choose a Pokemon to send out."
+          ? `Choose a Pokemon to send out against ${safe(() => s.getEnemyField().filter(e => e.isActive(true)).map(e => e.name).join(" and "), "the enemy")}.`
           : `Choose a party member (${phase}). Context: ${BOT.log.slice(-3).join(" / ")}`,
       party_mode: mode,
       options,

@@ -278,6 +278,8 @@ test("faint switch: party decision excludes fainted and on-field, then sends out
   const d = ctx.__prBot.getDecision();
   assert.equal(d.kind, "party");
   assert.deepEqual(plain(d.options.map(o => o.id)), ["slot:1"]);
+  assert.match(d.options[0].label, /Squirtle \(Lv10, 50\/50 HP; WATER; best move Surf 1x vs Gyarados\)/);
+  assert.match(d.prompt, /send out against Gyarados/);
   await ctx.__prBot.act(d.seq, "slot:1");
   assert.equal(h.cursor, 1);
   assert.equal(h.sent, 0, "SEND_OUT chosen automatically as the only real option");
