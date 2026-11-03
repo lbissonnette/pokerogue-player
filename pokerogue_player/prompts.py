@@ -63,8 +63,9 @@ def build_messages(decision: dict, notes: list[str], history: list[str]) -> list
 
 STARTER_SYSTEM_PROMPT = """\
 You are choosing the starting team for a PokeRogue Classic run (200 waves, gets much harder \
-over time). Pick 1 to 6 Pokemon whose total cost is at most the budget. Good teams usually \
-spend the whole budget, cover many types, and include Pokemon that evolve into strong forms. \
+over time). Pick 1 to 6 Pokemon whose total cost is at most the budget. Rules (an answer that \
+breaks one is rejected): spend the whole budget if anything still fits, and no two Pokemon may \
+share a type. Prefer Pokemon that evolve into strong forms. \
 Pokemon marked pokerus gain experience faster: the team MUST include at least one of them when \
 any is affordable.
 

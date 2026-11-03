@@ -34,28 +34,59 @@ def validate_team(ids: list, candidates: list[dict], budget: int) -> str | None:
         return f"total cost {cost} exceeds budget {budget}"
     if pokerus_required(candidates, budget) and not any(by_id[i].get("pokerus") for i in ids):
         return "the team must include at least one Pokemon marked pokerus"
+    seen: dict[str, str] = {}
+    for i in ids:
+        for t in by_id[i]["types"]:
+            if t in seen:
+                return (
+                    f"{seen[t]} and {by_id[i]['name']} are both {t} type; every starter must have "
+                    "different types so the team covers more matchups"
+                )
+            seen[t] = by_id[i]["name"]
+    left = budget - cost
+    if len(ids) < MAX_PARTY and left > 0:
+        fillers = [
+            c for c in candidates
+            if c["id"] not in ids and 0 < c["cost"] <= left and not set(c["types"]) & seen.keys()
+        ]
+        if fillers:
+            best = max(fillers, key=lambda c: c["bst"])
+            return (
+                f"{left} of the {budget} points are unspent; spend the whole budget "
+                f"(for example, add {best['name']} for {best['cost']}, or swap for stronger Pokemon)"
+            )
     return None
 
 
-def _knapsack(candidates: list[dict], budget: int, max_size: int) -> tuple[int, list[int]]:
-    # best[(cost, count)] = (bst_total, ids)
-    best: dict[tuple[int, int], tuple[int, list[int]]] = {(0, 0): (0, [])}
+def _knapsack(candidates: list[dict], budget: int, max_size: int, used_types=frozenset(),
+              keep: int = 40) -> tuple[int, list[int]]:
+    """Best total BST within budget and size, with no two Pokemon sharing a type.
+
+    Keeps the `keep` best partial teams per (cost, size), so it's a close approximation
+    rather than exhaustive, which is plenty for picking a fallback team."""
+    best: dict[tuple[int, int], list[tuple[int, list[int], frozenset]]] = {(0, 0): [(0, [], frozenset(used_types))]}
     for c in sorted(candidates, key=lambda c: c["id"]):
         if c["cost"] <= 0 or c["cost"] > budget:
             continue
-        for (cost, count), (bst, ids) in list(best.items()):
+        ctypes = frozenset(c["types"])
+        for (cost, count), teams in list(best.items()):
             nc, nn = cost + c["cost"], count + 1
             if nc > budget or nn > max_size:
                 continue
-            cand = (bst + c["bst"], ids + [c["id"]])
-            if cand[0] > best.get((nc, nn), (-1, []))[0]:
-                best[(nc, nn)] = cand
-    return max(best.values(), key=lambda v: v[0])
+            for bst, ids, types in list(teams):
+                if ctypes & types:
+                    continue
+                slot = best.setdefault((nc, nn), [])
+                slot.append((bst + c["bst"], ids + [c["id"]], types | ctypes))
+                slot.sort(key=lambda t: -t[0])
+                del slot[keep:]
+    bst, ids, _ = max((t for teams in best.values() for t in teams), key=lambda t: t[0])
+    return bst, ids
 
 
 def heuristic_team(candidates: list[dict], budget: int) -> list[int]:
-    """Maximise total base stats within the budget and party size, including a Pokerus
-    starter when one is affordable."""
+    """Maximise total base stats within the budget and party size, with no shared types,
+    including a Pokerus starter when one is affordable."""
     if not pokerus_required(candidates, budget):
         return _knapsack(candidates, budget, MAX_PARTY)[1]
     best: tuple[int, list[int]] = (-1, [])
@@ -63,7 +94,7 @@ def heuristic_team(candidates: list[dict], budget: int) -> list[int]:
         if not p.get("pokerus") or not 0 < p["cost"] <= budget:
             continue
         rest = [c for c in candidates if c["id"] != p["id"]]
-        bst, ids = _knapsack(rest, budget - p["cost"], MAX_PARTY - 1)
+        bst, ids = _knapsack(rest, budget - p["cost"], MAX_PARTY - 1, frozenset(p["types"]))
         if bst + p["bst"] > best[0]:
             best = (bst + p["bst"], [p["id"]] + ids)
     return best[1]
@@ -71,10 +102,11 @@ def heuristic_team(candidates: list[dict], budget: int) -> list[int]:
 
 async def choose_team(candidates: list[dict], budget: int, client=None, model: str | None = None,
                       temperature: float = 0.2) -> tuple[list[int], str]:
-    """Ask the LLM for a team (two tries), falling back to the heuristic."""
+    """Ask the LLM for a team (three tries, each told what was wrong), falling back to the
+    heuristic."""
     if client is not None and candidates:
         error = None
-        for _ in range(2):
+        for _ in range(3):
             try:
                 out = await client.chat_json(model, build_starter_messages(candidates, budget, error),
                                              temperature=temperature)

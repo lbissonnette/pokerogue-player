@@ -86,7 +86,7 @@ moves that have been used. `--reveal-hidden` gives it exact HP, natures and full
 | Reward / shop / reroll / skip. Items used on a Pokémon are offered as "item on Pokémon" pairs (only targets the item would affect), so the item and target are one decision | LLM |
 | Learning a move when the moveset is full | LLM |
 | Biome choice and other yes/no or option menus | LLM |
-| Starting team (10-point budget, always includes a Pokérus starter when one is affordable) | LLM (best-stats fallback), or `--starters` |
+| Starting team (10-point budget, always includes a Pokérus starter when one is affordable, no two starters share a type, the whole budget is spent if anything still fits; rejected teams are retried with the reason) | LLM (best-stats fallback), or `--starters` |
 | Title screen, save slot | Fixed rules: new run in an empty slot, or `--continue` the bot's own run |
 | "Switch before the next trainer Pokémon?" | Turned off via Battle Style "Set" |
 | Mystery encounters (description, each option and its effect; disabled options hidden) | LLM (fallback: last option, usually leave) |
